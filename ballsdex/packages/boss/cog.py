@@ -70,7 +70,7 @@ CHRISTMASBUFFS = [500,500] # Christmas Buffs
 MYTHICBUFFS = [3000,3000] # Mythic Buffs
 BOSSBUFFS = [4000,4000] # Boss Buffs
 # ATK, HP
-MAXSTATS = [150000,150000] # Max stats a card is limited to (before buffs)
+MAXSTATS = [15000000,15000000] # Max stats a card is limited to (before buffs)
 # ATK, HP
 DAMAGERNG = [5000,8000] # Damage a boss can deal IF attack_amount has NOT been inputted in /boss admin attack.
 # Min Damage, Max Damage

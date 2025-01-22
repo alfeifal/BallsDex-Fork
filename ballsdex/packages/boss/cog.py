@@ -61,7 +61,7 @@ from ballsdex.core.models import (
 # 7. /boss_conclude ends the boss battle and rewards the winner, but you can choose to *not* reward the winner (ADMIN ONLY)
 
 if settings.bot_name == "dragonballdex":
-    LOGCHANNEL = 1331582589663838270
+    LOGCHANNEL = 1234567890987654321
 else:
     LOGCHANNEL = 1331582589663838270
 #Change this if you want to a different channel for boss logs

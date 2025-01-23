@@ -96,7 +96,7 @@ class gaPacks(commands.Cog):
             entries.append(entry)
         # This is the number of countryballs who are displayed at one page,
         # you can change this, but keep in mind: discord has an embed size limit.
-        per_page = 5
+        per_page = 6
 
         source = FieldPageSource(entries, per_page=per_page, inline=False, clear_description=False)
         source.embed.description = (

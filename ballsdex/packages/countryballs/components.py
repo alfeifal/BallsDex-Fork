@@ -80,7 +80,7 @@ class CountryballNamePrompt(Modal, title=f"Catch this {settings.collectible_name
                     "that has been added to your completion!"
                 )
             await interaction.followup.send(
-                f"{interaction.user.mention} You caught **{self.ball.name}!** "
+                f"{interaction.user.mention} **{self.ball.name} has joined your lineup!** "
                 f"`(#{ball.pk:0X}, {ball.attack_bonus:+}%/{ball.health_bonus:+}%)`\n\n"
                 f"{special}",
                 allowed_mentions=discord.AllowedMentions(users=player.can_be_mentioned),

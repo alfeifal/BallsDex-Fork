@@ -643,6 +643,3 @@ class Boss(commands.GroupCog):
             f"{user} has joined the `{self.bossball}` Boss Battle. [hackjoin by {await self.bot.fetch_user(int(interaction.user.id))}]",
             self.bot,
         )
-
-cog.py
-31 KB

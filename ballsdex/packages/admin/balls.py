@@ -10,7 +10,7 @@ from discord.utils import format_dt
 from tortoise.exceptions import BaseORMException, DoesNotExist
 
 from ballsdex.core.bot import BallsDexBot
-from ballsdex.core.models import Ball, BallInstance, Player, Trade, TradeObject
+from ballsdex.core.models import Ball, BallInstance, Player, Trade, TradeObject, Regime
 from ballsdex.core.utils.buttons import ConfirmChoiceView
 from ballsdex.core.utils.logging import log_action
 from ballsdex.core.utils.transformers import (
@@ -27,16 +27,16 @@ FILENAME_RE = re.compile(r"^(.+)(\.\S+)$")
 
 
 async def save_file(attachment: discord.Attachment) -> Path:
-    path = Path(f"./admin_panel/media/{attachment.filename}")
+    path = Path(f"./static/uploads/{attachment.filename}")
     match = FILENAME_RE.match(attachment.filename)
     if not match:
         raise TypeError("The file you uploaded lacks an extension.")
     i = 1
     while path.exists():
-        path = Path(f"./admin_panel/media/{match.group(1)}-{i}{match.group(2)}")
+        path = Path(f"./static/uploads/{match.group(1)}-{i}{match.group(2)}")
         i = i + 1
     await attachment.save(path)
-    return path.relative_to("./admin_panel/media/")
+    return path
 
 
 class Balls(app_commands.Group):
@@ -100,57 +100,83 @@ class Balls(app_commands.Group):
     @app_commands.command()
     @app_commands.checks.has_any_role(*settings.root_role_ids)
     async def spawn(
-        self,
-        interaction: discord.Interaction[BallsDexBot],
-        countryball: BallTransform | None = None,
-        channel: discord.TextChannel | None = None,
-        n: app_commands.Range[int, 1, 100] = 1,
+       self,
+       interaction: discord.Interaction[BallsDexBot],
+       countryball: BallTransform | None = None,
+       regime: RegimeTransform | None = None,
+       channel: discord.TextChannel | None = None,
+       special: SpecialTransform | None = None,
+       n: app_commands.Range[int, 1, 100] = 1,
     ):
-        """
-        Force spawn a random or specified countryball.
+       """
+       Force spawns a random or specified countryball, optionally from a specified regime.
 
-        Parameters
-        ----------
-        countryball: Ball | None
-            The countryball you want to spawn. Random according to rarities if not specified.
-        channel: discord.TextChannel | None
-            The channel you want to spawn the countryball in. Current channel if not specified.
-        n: int
-            The number of countryballs to spawn. If no countryball was specified, it's random
-            every time.
-        """
-        # the transformer triggered a response, meaning user tried an incorrect input
-        if interaction.response.is_done():
-            return
+       Parameters
+       ----------
+       countryball: Ball | None
+           The countryball you want to spawn. Random according to rarities if not specified.
+       regime: Regime | None
+           The regime from which to spawn a countryball. Ignored if a countryball is specified.
+       channel: discord.TextChannel | None
+           The channel you want to spawn the countryball in. Current channel if not specified.
+       n: int
+           The number of countryballs to spawn. If no countryball was specified,
+           it's random every time.
+       """
+       if interaction.response.is_done():
+           return
 
-        if n > 1:
-            await self._spawn_bomb(
-                interaction, countryball, channel or interaction.channel, n  # type: ignore
-            )
-            await log_action(
-                f"{interaction.user} spawned {settings.collectible_name}"
-                f" {countryball or 'random'} {n} times in {channel or interaction.channel}.",
-                interaction.client,
-            )
+       if n > 1:
+           await self._spawn_bomb(
+               interaction, countryball, channel or interaction.channel, n  # type: ignore
+           )
+           await log_action(
+               f"{interaction.user} spawned {settings.collectible_name} "
+               f"{countryball or 'random'} {n} times in {channel or interaction.channel}",
+               interaction.client
+           )
+           return
 
-            return
+       await interaction.response.defer(ephemeral=True, thinking=True)
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        if not countryball:
-            ball = await CountryBall.get_random()
-        else:
-            ball = CountryBall(countryball)
-        result = await ball.spawn(channel or interaction.channel)  # type: ignore
+       # NOTE: `CountryBall` is not a variable. All variables are case-sensitive,
+       # which means the variable name in the if statement must have the same capitalization
+       # as the parameter name.
+       # CountryBall --> countryball
+       if not countryball:
+           if regime:
+               # NOTE: countryball is an instance of the `Ball` model.
+               # This means `countryball` does not have the filter function.
+               # Use `Ball` instead to filter through balls.
+               # Since you want to spawn a countryball,
+               # you have to wrap `CountryBall` around the ball returned.
+               # countryball --> Ball
+               # await Ball.filter(...) --> CountryBall(await Ball.filter(...))
+               ball = CountryBall(await Ball.filter(regime=regime).first())
+           else:
+               ball = await CountryBall.get_random()
+           # NOTE: This would have resulted with a SyntaxError.
+           # special=special,
 
-        if result:
-            await interaction.followup.send(
-                f"{settings.collectible_name.title()} spawned.", ephemeral=True
-            )
-            await log_action(
-                f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
-                f"in {channel or interaction.channel}.",
-                interaction.client,
-            )
+       # NOTE: Since the `ball` variable is a CountryBall,
+       # you do not have to call the CountryBall class again.
+       # You can just use `ball.spawn` to spawn that countryball.
+       # await CountryBall.spawn(...) -> await ball.spawn(...)
+       result = await ball.spawn(channel or interaction.channel)
+
+       if not result:
+           return
+
+       await interaction.followup.send(
+           f"{settings.collectible_name.title()} spawned.", ephemeral=True
+       )
+    
+       await log_action(
+           f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
+           f"in {channel or interaction.channel}",
+           interaction.client,
+       )
+
 
     @app_commands.command()
     @app_commands.checks.has_any_role(*settings.root_role_ids)
@@ -345,6 +371,59 @@ class Balls(app_commands.Group):
             f"{interaction.user} transferred {ball}({ball.pk}) from {original_player} to {user}.",
             interaction.client,
         )
+
+    @app_commands.command(name="bulk_transfer")
+    @app_commands.checks.has_any_role(*settings.root_role_ids)
+    async def balls_bulk_transfer(
+        self,
+        interaction: discord.Interaction[BallsDexBot],
+        donor: discord.User,
+        receiver: discord.User,
+    ):
+        """
+        Transfer all countryballs from one user to another.
+
+        Parameters
+        ----------
+        donor: discord.User
+            The user from whom the countryballs will be transferred.
+        receiver: discord.User
+            The user who will receive the countryballs.
+        """
+        # Get the player objects for both the donor and the receiver
+        donor_player, _ = await Player.get_or_create(discord_id=donor.id)
+        receiver_player, _ = await Player.get_or_create(discord_id=receiver.id)
+
+        # Get all countryballs owned by the donor
+        balls_to_transfer = await BallInstance.filter(player=donor_player).prefetch_related("player")
+
+        if not balls_to_transfer:
+            await interaction.response.send_message(
+                f"{donor} does not own any countryballs to transfer.", ephemeral=True
+            )
+            return
+    
+        # Start the bulk transfer
+        for ball in balls_to_transfer:
+            ball.player = receiver_player  
+            await ball.save()
+
+            # Log the transfer in the trade table
+            trade = await Trade.create(player1=donor_player, player2=receiver_player)
+            await TradeObject.create(trade=trade, ballinstance=ball, player=donor_player)
+
+        await interaction.response.send_message(
+            f"Transferred all countryballs from {donor} to {receiver}.",
+            ephemeral=True,
+        )
+
+        # Log the action
+        await log_action(
+            f"{interaction.user} bulk-transferred all countryballs from {donor} to {receiver}.",
+            interaction.client,
+        )
+
+
 
     @app_commands.command(name="reset")
     @app_commands.checks.has_any_role(*settings.root_role_ids)

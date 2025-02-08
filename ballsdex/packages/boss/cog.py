@@ -84,19 +84,19 @@ class Boss(commands.GroupCog):
 
     def __init__(self, bot: "BallsDexBot"):
         self.bot = bot
-        self.boss_enabled = False
+        self.boss_enabled = True
         self.balls = []
         self.users = []
         self.usersdamage = []
         self.usersinround = []
         self.currentvalue = ("")
         self.bossHP = 0
-        self.picking = False
+        self.picking = True
         self.round = 0
-        self.attack = False
+        self.attack = True
         self.bossattack = 0
-        self.bossball = None
-        self.bosswild = None
+        self.bossball = True
+        self.bosswild = True
         self.disqualified = []
 
     bossadmin = app_commands.Group(name="admin", description="admin commands for boss")

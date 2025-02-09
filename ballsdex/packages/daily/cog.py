@@ -27,6 +27,7 @@ from ballsdex.core.models import (
     Trade,
     TradeObject,
     balls,
+    Special,
     specials,
 )
 from ballsdex.core.utils.buttons import ConfirmChoiceView
@@ -57,47 +58,83 @@ class daily(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         
+    async def get_special(self) -> Optional[Special]:
+        """Get a random special based on rarity and date validity."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        valid_specials = [
+            special for special in specials.values()
+            if (not special.start_date or special.start_date <= now)
+            and (not special.end_date or special.end_date >= now)
+            and not special.hidden
+        ]
+        
+        for special in valid_specials:
+            if random.random() < special.rarity:
+                return special
+        return None
         
     @app_commands.command()
     @app_commands.checks.cooldown(1, 86400, key=lambda i: i.user.id)
     async def pack(self, interaction: discord.Interaction):
         """
-        Claim your daily pack! You can claim it once per day.
+        Claim your daily pack! You can claim it once per day and receive 5 balls.
         """
         await interaction.response.defer(thinking=True)
         player, _ = await Player.get_or_create(discord_id=interaction.user.id)
 
-        # Get a random ball
-        ball = await CountryBall.get_random()
-
-        # Create and assign the instance
-        instance = await BallInstance.create(
-            ball=ball.model,
-            player=player,
-            attack_bonus=random.randint(-20, 20),
-            health_bonus=random.randint(-20, 20),
-            special=None,
-        )
-        
+        # Create embed for the pack opening
         embed = discord.Embed(
             title="You've opened your pack successfully!",
-            description=f"Your chosen player is: `{ball.name}`",
-            color=0x3498db  # Color del Embed (puedes personalizarlo con el código hexadecimal)
-    )
-        embed.add_field(
-            name="Player Stats",
-            value=f"`{instance.attack_bonus:+d} ATK / {instance.health_bonus:+d} HP`",
-            inline=False
-    )    
+            description="Here are your 5 new players:",
+            color=0x3498db
+        )
+
+        # Get 5 random balls and create their instances
+        log_message = f"{interaction.user} claimed their daily pack and received: "
+        for i in range(5):
+            # Get a random ball
+            ball = await CountryBall.get_random()
+            
+            # Try to get a special
+            special = await self.get_special()
+            
+            # Create and assign the instance
+            instance = await BallInstance.create(
+                ball=ball.model,
+                player=player,
+                attack_bonus=random.randint(-20, 20),
+                health_bonus=random.randint(-20, 20),
+                special=special,
+            )
+            
+            # Add to embed
+            special_text = f" [**{special.name}**]" if special else ""
+            embed.add_field(
+                name=f"Player {i+1}: {ball.name}{special_text}",
+                value=f"`{instance.attack_bonus:+d} ATK / {instance.health_bonus:+d} HP`",
+                inline=False
+            )
+            
+            # Add to log message
+            special_log = f" ({special.name})" if special else ""
+            log_message += f"{ball.name}{special_log} ({instance.attack_bonus:+d} ATK, {instance.health_bonus:+d} HP), "
+
+            # Add special catch phrase if applicable
+            if special and special.catch_phrase:
+                embed.add_field(
+                    name="Congratulations.",
+                    value=special.catch_phrase,
+                    inline=False
+                )
+
         embed.add_field(
             name="",
-            value="**Your reward has been given, come back tomorrow!**",
+            value="**Your rewards have been given, come back tomorrow!**",
             inline=False
-    )
+        )
         
         await interaction.followup.send(embed=embed)
-    
-        await log_action(
-            f"{interaction.user} claimed their daily pack and received {ball.name} ({instance.attack_bonus:+d} ATK, {instance.health_bonus:+d} HP).",
-            self.bot,
-    )
+        
+        # Remove trailing comma and space from log message
+        log_message = log_message.rstrip(", ")
+        await log_action(log_message, self.bot)

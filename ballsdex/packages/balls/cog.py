@@ -1,5 +1,7 @@
 import enum
 import logging
+import datetime
+import random
 from typing import TYPE_CHECKING
 
 import discord
@@ -9,13 +11,15 @@ from discord.ui import Button, View, button
 from tortoise.exceptions import DoesNotExist
 from tortoise.functions import Count
 
-from ballsdex.core.models import BallInstance, DonationPolicy, Player, Trade, TradeObject, balls
+from ballsdex.core.models import BallInstance, DonationPolicy, Player, Trade, TradeObject, balls, Regime
 from ballsdex.core.utils.buttons import ConfirmChoiceView
+from ballsdex.core.utils.logging import log_action
 from ballsdex.core.utils.paginator import FieldPageSource, Pages
 from ballsdex.core.utils.sorting import SortingChoices, sort_balls
 from ballsdex.core.utils.transformers import (
     BallEnabledTransform,
     BallInstanceTransform,
+    RegimeTransform,
     SpecialEnabledTransform,
     TradeCommandType,
 )
@@ -121,6 +125,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         user: discord.User | None = None,
         sort: SortingChoices | None = None,
         reverse: bool = False,
+        regime: RegimeTransform | None = None,
         countryball: BallEnabledTransform | None = None,
         special: SpecialEnabledTransform | None = None,
     ):
@@ -135,6 +140,8 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             Choose how countryballs are sorted. Can be used to show duplicates.
         reverse: bool
             Reverse the output of the list.
+        regime: Regime
+            The team of which balls you want to filter.
         countryball: Ball
             Filter the list by a specific countryball.
         special: Special
@@ -170,27 +177,31 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
 
         await player.fetch_related("balls")
         query = player.balls.all()
+
+        # Apply filters
         if countryball:
             query = query.filter(ball__id=countryball.pk)
         if special:
             query = query.filter(special=special)
+        if regime:
+            query = query.filter(ball__regime=regime)
+
         if sort:
             countryballs = await sort_balls(sort, query)
         else:
             countryballs = await query.order_by("-favorite")
 
         if len(countryballs) < 1:
-            ball_txt = countryball.country if countryball else ""
-            special_txt = special if special else ""
+            # Build filter description
+            filter_parts = []
+            if countryball:
+                filter_parts.append(countryball.country)
+            if special:
+                filter_parts.append(str(special))
+            if regime:
+                filter_parts.append(str(regime))
 
-            if special_txt and ball_txt:
-                combined = f"{special_txt} {ball_txt}"
-            elif special_txt:
-                combined = special_txt
-            elif ball_txt:
-                combined = ball_txt
-            else:
-                combined = ""
+            combined = " ".join(filter_parts) if filter_parts else ""
 
             if user_obj == interaction.user:
                 await interaction.followup.send(
@@ -202,6 +213,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
                     f"{settings.plural_collectible_name} yet."
                 )
             return
+
         if reverse:
             countryballs.reverse()
 
@@ -210,7 +222,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             await paginator.start()
         else:
             await paginator.start(
-                content=f"Viewing {user_obj.name}'s {settings.plural_collectible_name}"
+                content=f"Viewing {user_obj.name}'s obtained {settings.plural_collectible_name}"
             )
 
     @app_commands.command()
@@ -637,7 +649,6 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         """
         if interaction.response.is_done():
             return
-
         assert interaction.guild
         filters = {}
         if countryball:
@@ -647,15 +658,12 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         if current_server:
             filters["server_id"] = interaction.guild.id
         filters["player__discord_id"] = interaction.user.id
-
         await interaction.response.defer(ephemeral=True, thinking=True)
-
         balls = await BallInstance.filter(**filters).count()
         country = f"{countryball.country} " if countryball else ""
         plural = "s" if balls > 1 or balls == 0 else ""
         special_str = f"{special.name} " if special else ""
         guild = f" caught in {interaction.guild.name}" if current_server else ""
-
         await interaction.followup.send(
             f"You have {balls} {special_str}"
             f"{country}{settings.collectible_name}{plural}{guild}."
@@ -674,35 +682,43 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         type: DuplicateType
             Type of duplicate to check (countryballs or specials).
         """
-        await interaction.response.defer(thinking=True, ephemeral=True)
-
-        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+        await interaction.response.defer(ephemeral=True)
+        user_id = interaction.user.id
+        player, _ = await Player.get_or_create(discord_id=user_id)
         await player.fetch_related("balls")
         is_special = type.value == "specials"
         queryset = BallInstance.filter(player=player)
 
-        if is_special:
+        if type.value == "specials":
             queryset = queryset.filter(special_id__isnull=False).prefetch_related("special")
-            annotations = {"name": "special__name", "emoji": "special__emoji"}
-            title = "special"
+            annotations = {
+                "name": "special__name",
+                "emoji": "special__emoji",
+            }
             limit = 5
+            title = "specials"
         else:
             queryset = queryset.filter(ball__tradeable=True)
-            annotations = {"name": "ball__country", "emoji": "ball__emoji_id"}
-            title = settings.collectible_name
+            annotations = {
+                "name": "ball__country",
+                "emoji": "ball__emoji_id",
+            }
             limit = 50
+            title = settings.plural_collectible_name
 
-        results = (
-            await queryset.annotate(count=Count("id"))
+        queryset = (
+            queryset.annotate(count=Count("id"))
             .group_by(*annotations.values())
             .order_by("-count")
             .limit(limit)
             .values(*annotations.values(), "count")
         )
+        results = await queryset
 
         if not results:
             await interaction.followup.send(
-                f"You don't have any {type.value} duplicates in your inventory.", ephemeral=True
+                f"You don't have any {type.value} duplicates in your inventory!",
+                ephemeral=True,
             )
             return
 
@@ -714,17 +730,9 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             )
             for i, item in enumerate(results)
         ]
-
-        embed_title = (
-            f"Top {len(results)} duplicate {title}s:"
-            if len(results) > 1
-            else f"Top {len(results)} duplicate {title}"
-        )
-
         source = FieldPageSource(entries, per_page=5 if is_special else 10, inline=False)
-        source.embed.title = embed_title
+        source.embed.title = f"Top {len(results)} duplicate {title}"
         source.embed.color = discord.Color.purple() if is_special else discord.Color.blue()
         source.embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
         paginator = Pages(source, interaction=interaction)
         await paginator.start(ephemeral=True)

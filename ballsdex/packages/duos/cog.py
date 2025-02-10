@@ -1,144 +1,422 @@
 import logging
+import random
+from random import randint
 
 import discord
-import random
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import Button, View, button
+from tortoise.exceptions import DoesNotExist
+from tortoise.transactions import atomic
 
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional, cast, Dict, Any
 
-from ballsdex.core.models import BallInstance
-from ballsdex.core.models import Player
-from ballsdex.core.models import balls
-from ballsdex.core.models import specials
-from ballsdex.core.utils.transformers import BallEnabledTransform
-from ballsdex.core.utils.transformers import SpecialEnabledTransform
-from ballsdex.core.utils.transformers import SpecialTransform
+from ballsdex.core.models import BallInstance, Player, Ball, specials
+from ballsdex.core.utils.transformers import (
+    BallEnabledTransform,
+    BallTransform,
+    SpecialEnabledTransform,
+    SpecialTransform,
+)
+from ballsdex.core.utils.buttons import ConfirmChoiceView
 from ballsdex.core.utils.paginator import FieldPageSource, Pages
+from ballsdex.core.utils.sorting import SortingChoices, sort_balls
 from ballsdex.settings import settings
-
-if TYPE_CHECKING:
-    from ballsdex.core.bot import BallsDexBot
+from ballsdex.core.utils.logging import log_action
 
 log = logging.getLogger("ballsdex.packages.duos.cog")
 
-DUOS_AVAILABLE = {
-    "Lionel Andres Messi & Cristiano Ronaldo": (10, 10),
-    "Van Basten & Van Nistelrooy": (10, 10),
-    "Paolo Maldini & Franz Beckenbauer": (10, 10),
-    "Zinedine Zidane & Ronaldinho Gaucho": (10, 10),
-    "Diego Armando Maradona & Pele": (10, 10),
-    "Ramos & Piqué": (10, 10),
-    "Cruyff & Gullit": (10, 10),
-    "Henry & Mbappé": (10, 20),
-    "Neuer & Buffon": (10, 10),
+# =====================================
+# Define your duos and their requirements here
+# Format:
+# "Duo Name": {
+#     'requirements': {
+#         'Required Ball 1': amount_needed,
+#         'Required Ball 2': amount_needed,
+#     },
+#     'description': "Description of the duo and its effects" (optional)
+# }
+# =====================================
+
+DUOS_AVAILABLE: Dict[str, Dict[str, Any]] = {
+    "Messi & Cristiano": {
+        'requirements': {
+            'Lionel Andres Messi': 20, 
+            'Cristiano Ronaldo': 20,
+        },
+        'description': "The ultimate football duo combining the talents of Messi and CR7"
+    },
+    "Neuer & Buffon": {
+        'requirements': {
+            'Manuel Neuer': 20,
+            'Gianluigi Buffon': 20,
+        },
+        'description': "Two legendary goalkeepers unite"
+    },
+    "Henry & Mbappe": {
+        'requirements': {
+            'Thierry Henry': 20,
+            'Kylian Mbappe': 20,
+        },
+        'description': "French striking legends across generations"
+    },
+    "Cruyff & Gullit": {
+        'requirements': {
+            'Johan Cruyff': 20,
+            'Ruud Gullit': 20,
+        },
+        'description': "The Dutch masters of total football"
+    },
+    "Maradona & Pele": {
+        'requirements': {
+            'Diego Armando Maradona': 20,
+            'Edson Arantes Pele': 20,
+        },
+        'description': "The greatest of all time unite"
+    },
+    "Zizou & Dinho": {
+        'requirements': {
+            'Zinedine Zidane': 20,
+            'Ronaldinho Gaucho': 20,
+        },
+        'description': "Masters of football artistry"
+    },
+    "Maldini & Franz B.": {
+        'requirements': {
+            'Paolo Maldini': 20,
+            'Franz Beckenbauer': 20,
+        },
+        'description': "The ultimate defensive partnership"
+    },
+    "Van Basten & Van Nistelrooy": {
+        'requirements': {
+            'Marco Van Basten': 20,
+            'Van Nistelrooy': 20,
+        },
+        'description': "Dutch striking perfection"
+    },
+    "Ramos & Pique": {
+        'requirements': {
+            'Sergio Ramos': 20,
+            'Gerard Pique': 20,
+        },
+        'description': "Spain's legendary center-back pairing"
+    },
 }
 
-class Duos(commands.GroupCog):
-    """
-    Dream duos Commands.
-    """
 
-    def __init__(self, bot: "BallsDexBot"):
+class Duos(commands.GroupCog):
+    """A cog for managing duo cards that can be crafted from combining individual cards."""
+    
+    def __init__(self, bot):
         self.bot = bot
 
-    ccadmin = app_commands.Group(name="admin", description="admin commands for dream duos cards")
+    async def _get_player_and_check_duo(
+        self, 
+        interaction: discord.Interaction, 
+        duo_name: str
+    ) -> tuple[Optional[Player], Optional[Ball], Optional[str]]:
+        """Helper method to get player and check duo validity."""
+        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+        
+        if duo_name not in DUOS_AVAILABLE:
+            await interaction.followup.send(
+                "Invalid duo card name. Please use the exact name of your duo card.",
+                ephemeral=True
+            )
+            return None, None, None
+            
+        duo_ball = await Ball.filter(country=duo_name).first()
+        if not duo_ball:
+            await interaction.followup.send(
+                "This duo card is not properly configured in the database. Please contact the owner to fix its name.",
+                ephemeral=True
+            )
+            return None, None, None
+            
+        return player, duo_ball, duo_name
 
-    
+    async def _check_requirements(
+        self,
+        player: Player,
+        requirements: dict[str, int],
+        amount: int = 1
+    ) -> tuple[dict[str, tuple[Ball, list[BallInstance]]], list[str]]:
+        """
+        Check if a player has the required balls for boosting.
+        Now only requires 1 of each ball regardless of amount parameter.
+
+        Returns a tuple of:
+        - Dictionary mapping ball name to (Ball, list of instances)
+        - List of missing ball names
+        """
+        boost_instances: dict[str, tuple[Ball, list[BallInstance]]] = {}
+        missing_balls: list[str] = []
+
+        for ball_name in requirements:
+            ball = await Ball.get_or_none(country=ball_name)
+            if not ball:
+                missing_balls.append(ball_name)
+                continue
+
+            # Get available regular instances of this ball
+            instances = await BallInstance.filter(
+                player=player,
+                ball=ball,
+                special=None,  # Only regular balls
+                locked=None,  # Not locked
+                favorite=False,  # Not favorited
+            )
+
+            # Now we only need 1 instance regardless of amount
+            if len(instances) < 1:
+                missing_balls.append(ball_name)
+            else:
+                boost_instances[ball_name] = (ball, instances)
+
+        return boost_instances, missing_balls
+
     @app_commands.command()
-    @app_commands.describe(duo="Select a dream duo to craft")
+    @app_commands.describe(duo="Select a duo to create")
     @app_commands.choices(duo=[app_commands.Choice(name=name, value=name) for name in DUOS_AVAILABLE])
     async def craft(self, interaction: discord.Interaction, duo: app_commands.Choice[str]):
-        """
-        Craft a dream duo card.
+        """Craft a duo card using the required players."""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            player, duo_ball, duo_name = await self._get_player_and_check_duo(interaction, duo.value)
+            if not all([player, duo_ball, duo_name]):
+                return
+                
+            # Check if player already has this duo
+            existing_duo = await BallInstance.filter(player=player, ball=duo_ball).exists()
+            if existing_duo:
+                return await interaction.followup.send(
+                    f"You already have a {duo_name} duo card! Use the `/duos boost` command to improve its stats instead.",
+                    ephemeral=True
+                )
 
-        Parameters
-        ----------
-        duo: Ball
-            The players which duo card you want to claim.
-        """
-        duo_name = duo.value
+            # Check requirements
+            required_instances, missing_balls = await self._check_requirements(
+                player,
+                DUOS_AVAILABLE[duo_name]['requirements']
+            )
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+            if missing_balls:
+                return await interaction.followup.send(
+                    f"You don't have enough regular (non-special) balls to craft this duo. Missing:\n" + "\n".join(missing_balls),
+                    ephemeral=True
+                )
 
-        # Obtener los nombres de los jugadores del dúo
-        first_countryball, second_countryball = duo_name.split(" & ")
-        first_needed, second_needed = DUOS_AVAILABLE[duo_name]
+            # Ask for confirmation
+            requirements_text = "\n".join(
+                f"- {name}: {len(instances)}" for name, (_, instances) in required_instances.items()
+            )
+            confirm_view = ConfirmChoiceView(
+                interaction,
+                accept_message=f"Creating the duo card {duo_name}...",
+                cancel_message="Crafting canceled.",
+            )
+            
+            await interaction.followup.send(
+                f"Are you sure you want to craft the duo card {duo_name}? This will consume:\n{requirements_text}",
+                ephemeral=True,
+                view=confirm_view
+            )
 
-        # Contar los jugadores del usuario, excluyendo los especiales
-        first_count = await BallInstance.filter(
-            player=player, ball__country=first_countryball
-        ).exclude(special=True).count()
+            await confirm_view.wait()
+            if not confirm_view.value:
+                return
 
-        second_count = await BallInstance.filter(
-            player=player, ball__country=second_countryball
-        ).exclude(special=True).count()
+            @atomic()
+            async def create_duo():
+                for _, (_, instances) in required_instances.items():
+                    for instance in instances:
+                        await instance.delete()
+                
+                await BallInstance.create(
+                    ball=duo_ball,
+                    player=player,
+                    attack_bonus=randint(-20, 20),
+                    health_bonus=randint(-20, 20),
+                    special=None,
+                )
 
-        # Verificar si el usuario tiene suficientes jugadores
-        if first_count < first_needed or second_count < second_needed:
-            return await interaction.followup.send(
-                f"You need {first_needed} {first_countryball} and {second_needed} {second_countryball} "
-                f"to craft the {duo_name} duo. You currently have {first_count} {first_countryball} "
-                f"and {second_count} {second_countryball}.", 
+            await create_duo()
+
+            await interaction.followup.send(
+                f"Successfully crafted the {duo_name} duo card!",
+                ephemeral=True
+            )
+            
+            await log_action(
+                f"{interaction.user} crafted a {duo_name} duo card.",
+                self.bot
+            )
+
+        except Exception as e:
+            log.exception("Error while crafting duo card")
+            await interaction.followup.send(
+                "An error occurred while crafting the duo card. Please try again later.",
                 ephemeral=True
             )
 
-        # Pedir confirmación antes de eliminar las cartas
-        confirm_message = await interaction.followup.send(
-            f"Are you sure you want to craft the {duo_name} dream duo card? This will consume "
-            f"{first_needed} {first_countryball} and {second_needed} {second_countryball}.",
-            ephemeral=True,
-            view=ConfirmChoiceView(
-                interaction,
-                accept_message=f"Confirmed, crafting the {duo_name} duo card...",
-                cancel_message="Request cancelled.",
+    @app_commands.command()
+    @app_commands.describe(
+    duo="The duo card to boost"
+    )
+    @app_commands.choices(duo=[app_commands.Choice(name=name, value=name) for name in DUOS_AVAILABLE])
+    async def boost(self, interaction: discord.Interaction, duo: app_commands.Choice[str]):
+        """Boost a duo card's stats using additional players."""
+        await interaction.response.defer(ephemeral=True)
+    
+        try:
+            player, duo_ball, duo_name = await self._get_player_and_check_duo(interaction, duo.value)
+            if not all([player, duo_ball, duo_name]):
+                return
+            
+            duo_instance = await BallInstance.filter(player=player, ball=duo_ball).first()
+            if not duo_instance:
+                return await interaction.followup.send(
+                    f"You don't have a {duo_name} duo card to boost!",
+                    ephemeral=True
+                )
+
+            # Check if already at max stats
+            if duo_instance.attack_bonus >= 20 and duo_instance.health_bonus >= 20:
+                return await interaction.followup.send(
+                    f"Your {duo_name} duo card is already at maximum stats (+20/+20)!",
+                    ephemeral=True
+                )
+
+            # Check requirements
+            boost_instances, missing_balls = await self._check_requirements(
+                player,
+                DUOS_AVAILABLE[duo_name]['requirements'],
+                1  # Always use 1 of each
             )
-        )
 
-        # Esperar la confirmación
-        view = ConfirmChoiceView(interaction, 
-                                 accept_message=f"Confirmed, crafting the {duo_name} duo card...", 
-                                 cancel_message="Request cancelled.")
-        await view.wait()
+            if missing_balls:
+                return await interaction.followup.send(
+                    f"You don't have enough regular (non-special) balls to boost. Missing:\n" + "\n".join(missing_balls),
+                    ephemeral=True
+                )
 
-        if not view.value:  # if the user did not confirm (cancelled)
-            return await interaction.followup.send("Action cancelled.", ephemeral=True)
+            # Calculate boost amount based on current stats
+            boost_amount = min(
+                20 - duo_instance.attack_bonus,
+                20 - duo_instance.health_bonus,
+                1  # Always boost by 1
+            )
 
-        # Eliminar las cartas necesarias
-        first_countryball = await BallInstance.filter(
-            player=player, ball__country=first_countryball
-        ).exclude(special=True).limit(first_needed)
-        
-        second_countryball = await BallInstance.filter(
-            player=player, ball__country=second_countryball
-        ).exclude(special=True).limit(second_needed)
+            if boost_amount <= 0:
+                return await interaction.followup.send(
+                    f"Your {duo_name} duo card cannot be boosted further, its already maxed",
+                    ephemeral=True
+                )
 
-        for ball in first_countryball:
-            await ball.delete()
+        # Ask for confirmation
+            requirements_text = "\n".join(
+                f"- {name}: 1" for name in boost_instances.keys()
+            )
+            confirm_view = ConfirmChoiceView(
+                interaction,
+                accept_message=f"Boosting {duo_name}...",
+                cancel_message="Boost canceled.",
+            )
 
-        for ball in second_countryball:
-            await ball.delete()
+            await interaction.followup.send(
+                f"Are you sure you want to boost your {duo_name} duo card? This will consume:\n`{requirements_text}`\n"
+                f"This will give +1 to both ATK and HP.",
+                ephemeral=True,
+                view=confirm_view
+            )
 
-        # Crear la nueva duo ball
-        await BallInstance.create(
-            ball=duo_name,
-            player=player,
-            attack_bonus=random.randint(-20, 20),
-            health_bonus=random.randint(-20, 20),
-        )
+            await confirm_view.wait()
+            if not confirm_view.value:
+                return
 
-        await interaction.followup.send(
-            f"Congrats! You have crafted the {duo_name} dream duo card and the used {first_countryball} and "
-            f"{second_countryball} cards have been deleted.", ephemeral=True
-        )
+            @atomic()
+            async def boost_duo():
+                for _, (_, instances) in boost_instances.items():
+                # Only delete one instance of each required ball
+                    await instances[0].delete()
 
+                duo_instance.attack_bonus += boost_amount
+                duo_instance.health_bonus += boost_amount
+                await duo_instance.save()
+
+            await boost_duo()
+
+            await interaction.followup.send(
+                f"Successfully boosted your {duo_name} duo card! New stats: "
+                f"`ATK:{duo_instance.attack_bonus:+d}% HP:{duo_instance.health_bonus:+d}%`",
+                ephemeral=True
+            )
+
+            await log_action(
+                f"{interaction.user} boosted their {duo_name} duo card by +{boost_amount} using "
+                f"one of each required ball.",
+                self.bot
+            )
+
+        except Exception as e:
+            log.exception("Error while boosting duo card")
+            await interaction.followup.send(
+                "An error occurred while boosting the duo card. Please try again later.",
+                ephemeral=True
+            )
+            
     @app_commands.command()
     async def list(self, interaction: discord.Interaction):
-        """
-        List all available dream duos.
-        """
-        duo_list = "\n".join(
-            [f"**{duo}**: {req[0]} {duo.split(' & ')[0]} + {req[1]} {duo.split(' & ')[1]}" for duo, req in DUOS_AVAILABLE.items()]
-        )
-        await interaction.response.send_message(f"**Available Dream Duos:**\n{duo_list}", ephemeral=True)
+        """Show all available duos and their requirements."""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            embed = discord.Embed(
+                title="Available Dream Duos",
+                description="Here are all the available duo cards you can craft:",
+                color=0x3498db
+            )
+
+            for duo_name, duo_info in DUOS_AVAILABLE.items():
+                # Get the ball model for this duo
+                duo_ball = await Ball.filter(country=duo_name).first()
+                if not duo_ball:
+                    continue
+
+                # Get the duo emoji
+                emoji = f"{self.bot.get_emoji(duo_ball.emoji_id)}" if duo_ball.emoji_id else "👥"
+
+                # Format requirements with emojis
+                requirements_lines = []
+                for req_name, amount in duo_info['requirements'].items():
+                    # Get the required ball model and its emoji
+                    req_ball = await Ball.filter(country=req_name).first()
+                    if req_ball:
+                        req_emoji = f"{self.bot.get_emoji(req_ball.emoji_id)}" if req_ball.emoji_id else "🔵"
+                        requirements_lines.append(f"• {req_emoji} {req_name}: {amount} needed")
+                    else:
+                        requirements_lines.append(f"• {req_name}: {amount} needed")
+
+                requirements = "\n".join(requirements_lines)
+
+                # Add description if available
+                description = f"\n\n*{duo_info.get('description', '')}*" if duo_info.get('description') else ""
+
+                field_value = f"**Requirements:**\n{requirements}{description}"
+
+                embed.add_field(
+                    name=f"{emoji} {duo_name}",
+                    value=field_value,
+                    inline=False
+                )
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            log.exception("Error while listing duos")
+            await interaction.followup.send(
+                "An error occurred while listing the duos. Please try again later.",
+                ephemeral=True
+            )

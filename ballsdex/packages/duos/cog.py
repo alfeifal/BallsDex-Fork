@@ -81,6 +81,27 @@ DUOS_AVAILABLE: Dict[str, Dict[str, Any]] = {
         },
         'description': "Masters of football artistry"
     },
+    "Iniesta & Modric": {
+        'requirements': {
+            'Andres Iniesta': 20,
+            'Luka Modric': 20,
+        },
+        'description': "The masters of the midfield"
+    },
+    "Baggio & Totti": {
+        'requirements': {
+            'Roberto Baggio': 20,
+            'Francesco Totti': 20,
+        },
+        'description': "The greatest who died in different ways"
+    },
+    "Xavi & Pirlo": {
+        'requirements': {
+            'Xavi Hernandez': 20,
+            'Andrea Pirlo': 20,
+        },
+        'description': "This kind of magic doesnt happen twice"
+    },
     "Maldini & Franz B.": {
         'requirements': {
             'Paolo Maldini': 20,
@@ -121,7 +142,7 @@ class Duos(commands.GroupCog):
         
         if duo_name not in DUOS_AVAILABLE:
             await interaction.followup.send(
-                "Invalid duo card name. Please use the exact name of your duo card.",
+                "The selected duo might be not in game yet and its just a preview.",
                 ephemeral=True
             )
             return None, None, None

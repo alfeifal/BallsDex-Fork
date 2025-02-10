@@ -1,21 +1,12 @@
 import datetime
 import logging
 import random
-import re
-from collections import defaultdict
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional, cast
-
+from typing import List, Optional, Tuple
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button
-from discord.utils import format_dt
-from tortoise.exceptions import BaseORMException, DoesNotExist, IntegrityError
+from discord.ui import Button, View
 from tortoise.expressions import Q
-from ballsdex.core.models import PrivacyPolicy
-from ballsdex.core.utils.buttons import ConfirmChoiceView
-from ballsdex.core.models import Player as PlayerModel
 
 from ballsdex.core.models import (
     Ball,
@@ -30,34 +21,114 @@ from ballsdex.core.models import (
     Special,
     specials,
 )
-from ballsdex.core.utils.buttons import ConfirmChoiceView
-from ballsdex.core.utils.logging import log_action
-from ballsdex.core.utils.paginator import FieldPageSource, Pages, TextPageSource
-from ballsdex.core.utils.transformers import (
-    BallTransform,
-    EconomyTransform,
-    RegimeTransform,
-    SpecialTransform,
-    BallEnabledTransform,
-    BallInstanceTransform,
-    SpecialEnabledTransform,
-    TradeCommandType,
-)
 from ballsdex.packages.countryballs.countryball import CountryBall
-from ballsdex.packages.trade.display import TradeViewFormat, fill_trade_embed_fields
-from ballsdex.packages.trade.trade_user import TradingUser
-from ballsdex.settings import settings
-
-if TYPE_CHECKING:
-    from ballsdex.core.bot import BallsDexBot
-    from ballsdex.packages.countryballs.cog import CountryBallsSpawner
+from ballsdex.core.utils.logging import log_action
 
 log = logging.getLogger("ballsdex.packages.daily.cog")
 
-class daily(commands.Cog):
-    def __init__(self, bot):
+class PackOpeningView(View):
+    def __init__(self, bot: commands.Bot, instances: List[Tuple[BallInstance, CountryBall, Optional[Special]]]):
+        super().__init__(timeout=180)
         self.bot = bot
+        self.instances = instances
+        self.current_index = 0
+        self.revealed = [False] * len(instances)
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        if not all(self.revealed):
+            reveal_button = Button(
+                label="Reveal Next Ball", 
+                style=discord.ButtonStyle.primary,
+                custom_id="reveal"
+            )
+            reveal_button.callback = self.reveal_ball
+            self.add_item(reveal_button)
+
+            reveal_all_button = Button(
+                label="Reveal All", 
+                style=discord.ButtonStyle.success,
+                custom_id="reveal_all"
+            )
+            reveal_all_button.callback = self.reveal_all
+            self.add_item(reveal_all_button)
+
+    async def reveal_ball(self, interaction: discord.Interaction):
+        if self.current_index >= len(self.instances):
+            return
+
+        self.revealed[self.current_index] = True
+        embed = await self.create_pack_embed()
+        self.current_index += 1
+
+        if self.current_index >= len(self.instances):
+            self.clear_items()
+            embed.set_footer(text="Pack opening complete! 🎉")
+        else:
+            self.update_buttons()
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def reveal_all(self, interaction: discord.Interaction):
+        self.revealed = [True] * len(self.instances)
+        self.current_index = len(self.instances)
         
+        embed = await self.create_pack_embed()
+        embed.set_footer(text="Pack opening complete! 🎉")
+        
+        self.clear_items()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def create_pack_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="🎁 Daily Pack Opening!",
+            description="Revealing your new balls...",
+            color=0x3498db
+        )
+
+        total_attack = 0
+        total_health = 0
+
+        for i, (revealed, (instance, countryball, special)) in enumerate(zip(self.revealed, self.instances)):
+            if revealed:
+                ball_model = balls.get(instance.ball_id, instance.ball)
+                emoji = f"{self.bot.get_emoji(ball_model.emoji_id)}"  # Formateo directo del emoji
+                special_text = f" [**{special.name}**]" if special else ""
+        
+                field_name = f"Ball #{i+1}: {emoji} {ball_model.country}{special_text}"
+                field_value = (
+                    f"`ATK: {instance.attack_bonus:+d}% ({instance.attack})`\n"
+                    f"`HP: {instance.health_bonus:+d}% ({instance.health})`"
+            )
+                
+                if special and special.catch_phrase:
+                    field_value += f"\n*{special.catch_phrase}*"
+
+                total_attack += instance.attack
+                total_health += instance.health
+                
+                embed.add_field(name=field_name, value=field_value, inline=False)
+            else:
+                embed.add_field(
+                    name=f"Ball #{i+1}", 
+                    value="❓ *Click 'Reveal Next Ball' to see what you got!*",
+                    inline=False
+                )
+
+        if all(self.revealed):
+            embed.add_field(
+                name="📊 Pack Statistics",
+                value=f"Total ATK: {total_attack}\nTotal HP: {total_health}",
+                inline=False
+            )
+
+        return embed
+
+class daily(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
     async def get_special(self) -> Optional[Special]:
         """Get a random special based on rarity and date validity."""
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -72,7 +143,7 @@ class daily(commands.Cog):
             if random.random() < special.rarity:
                 return special
         return None
-        
+
     @app_commands.command()
     @app_commands.checks.cooldown(1, 86400, key=lambda i: i.user.id)
     async def pack(self, interaction: discord.Interaction):
@@ -82,59 +153,32 @@ class daily(commands.Cog):
         await interaction.response.defer(thinking=True)
         player, _ = await Player.get_or_create(discord_id=interaction.user.id)
 
-        # Create embed for the pack opening
-        embed = discord.Embed(
-            title="You've opened your pack successfully!",
-            description="Here are your 5 new players:",
-            color=0x3498db
-        )
-
-        # Get 5 random balls and create their instances
+        instances_data = []
         log_message = f"{interaction.user} claimed their daily pack and received: "
-        for i in range(5):
-            # Get a random ball
-            ball = await CountryBall.get_random()
-            
-            # Try to get a special
+
+        for _ in range(5):
+            countryball = await CountryBall.get_random()
             special = await self.get_special()
             
-            # Create and assign the instance
             instance = await BallInstance.create(
-                ball=ball.model,
+                ball=countryball.model,
                 player=player,
                 attack_bonus=random.randint(-20, 20),
                 health_bonus=random.randint(-20, 20),
                 special=special,
             )
             
-            # Add to embed
-            special_text = f" [**{special.name}**]" if special else ""
-            embed.add_field(
-                name=f"Player {i+1}: {ball.name}{special_text}",
-                value=f"`{instance.attack_bonus:+d} ATK / {instance.health_bonus:+d} HP`",
-                inline=False
-            )
+            instances_data.append((instance, countryball, special))
             
             # Add to log message
             special_log = f" ({special.name})" if special else ""
-            log_message += f"{ball.name}{special_log} ({instance.attack_bonus:+d} ATK, {instance.health_bonus:+d} HP), "
+            log_message += f"{countryball.name}{special_log} ({instance.attack_bonus:+d} ATK, {instance.health_bonus:+d} HP), "
 
-            # Add special catch phrase if applicable
-            if special and special.catch_phrase:
-                embed.add_field(
-                    name="Congratulations.",
-                    value=special.catch_phrase,
-                    inline=False
-                )
-
-        embed.add_field(
-            name="",
-            value="**Your rewards have been given, come back tomorrow!**",
-            inline=False
-        )
+        view = PackOpeningView(self.bot, instances_data)
+        initial_embed = await view.create_pack_embed()
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=initial_embed, view=view)
         
-        # Remove trailing comma and space from log message
+        # Log the pack opening
         log_message = log_message.rstrip(", ")
         await log_action(log_message, self.bot)

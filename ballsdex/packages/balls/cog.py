@@ -633,6 +633,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         interaction: discord.Interaction,
         countryball: BallEnabledTransform | None = None,
         special: SpecialEnabledTransform | None = None,
+        regime: RegimeTransform | None = None,
         current_server: bool = False,
     ):
         """
@@ -644,6 +645,8 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             The countryball you want to count
         special: Special
             The special you want to count
+        regime: Regime
+            The regime you want to count
         current_server: bool
             Only count countryballs caught in the current server
         """
@@ -655,19 +658,21 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             filters["ball"] = countryball
         if special:
             filters["special"] = special
+        if regime:
+            filters["ball__regime"] = regime
         if current_server:
             filters["server_id"] = interaction.guild.id
         filters["player__discord_id"] = interaction.user.id
         await interaction.response.defer(ephemeral=True, thinking=True)
         balls = await BallInstance.filter(**filters).count()
         country = f"{countryball.country} " if countryball else ""
+        regime_str = f"{regime.name} " if regime else ""
         plural = "s" if balls > 1 or balls == 0 else ""
         special_str = f"{special.name} " if special else ""
         guild = f" caught in {interaction.guild.name}" if current_server else ""
         await interaction.followup.send(
-            f"You have {balls} {special_str}"
-            f"{country}{settings.collectible_name}{plural}{guild}."
-        )
+            f"You have {balls} {special_str}{regime_str}{country}{settings.collectible_name}{plural}{guild}."
+    )
 
     @app_commands.command()
     @app_commands.checks.cooldown(1, 60, key=lambda i: i.user.id)

@@ -100,82 +100,70 @@ class Balls(app_commands.Group):
     @app_commands.command()
     @app_commands.checks.has_any_role(*settings.root_role_ids)
     async def spawn(
-       self,
-       interaction: discord.Interaction[BallsDexBot],
-       countryball: BallTransform | None = None,
-       regime: RegimeTransform | None = None,
-       channel: discord.TextChannel | None = None,
-       special: SpecialTransform | None = None,
-       n: app_commands.Range[int, 1, 100] = 1,
+        self,
+        interaction: discord.Interaction[BallsDexBot],
+        countryball: BallTransform | None = None,
+        regime: RegimeTransform | None = None,
+        channel: discord.TextChannel | None = None,
+        n: app_commands.Range[int, 1, 100] = 1,
     ):
-       """
-       Force spawns a random or specified countryball, optionally from a specified regime.
+        """
+        Force spawns a random or specified countryball, optionally from a specified regime with optional special status.
 
-       Parameters
-       ----------
-       countryball: Ball | None
-           The countryball you want to spawn. Random according to rarities if not specified.
-       regime: Regime | None
-           The regime from which to spawn a countryball. Ignored if a countryball is specified.
-       channel: discord.TextChannel | None
-           The channel you want to spawn the countryball in. Current channel if not specified.
-       n: int
-           The number of countryballs to spawn. If no countryball was specified,
-           it's random every time.
-       """
-       if interaction.response.is_done():
-           return
+        Parameters
+        ----------
+        countryball: Ball | None
+            The countryball you want to spawn. Random according to rarities if not specified.
+        regime: Regime | None
+            The regime from which to spawn a countryball. Ignored if a countryball is specified.
+        channel: discord.TextChannel | None
+            The channel you want to spawn the countryball in. Current channel if not specified.
+        special: Special | None
+            The special event to apply to the spawned ball. Random according to current events if not specified.
+        n: int
+            The number of countryballs to spawn. If no countryball was specified,
+            it's random every time.
+        """
+        if interaction.response.is_done():
+            return
 
-       if n > 1:
-           await self._spawn_bomb(
-               interaction, countryball, channel or interaction.channel, n  # type: ignore
-           )
-           await log_action(
-               f"{interaction.user} spawned {settings.collectible_name} "
-               f"{countryball or 'random'} {n} times in {channel or interaction.channel}",
-               interaction.client
-           )
-           return
+        if n > 1:
+            await self._spawn_bomb(
+                interaction, countryball, channel or interaction.channel, n, special  # type: ignore
+            )
+            await log_action(
+                f"{interaction.user} spawned {settings.collectible_name}",
+                f"{countryball or 'random'} {n} times in {channel or interaction.channel}",
+                interaction.client
+            )
+            return
 
-       await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
 
-       # NOTE: `CountryBall` is not a variable. All variables are case-sensitive,
-       # which means the variable name in the if statement must have the same capitalization
-       # as the parameter name.
-       # CountryBall --> countryball
-       if not countryball:
-           if regime:
-               # NOTE: countryball is an instance of the `Ball` model.
-               # This means `countryball` does not have the filter function.
-               # Use `Ball` instead to filter through balls.
-               # Since you want to spawn a countryball,
-               # you have to wrap `CountryBall` around the ball returned.
-               # countryball --> Ball
-               # await Ball.filter(...) --> CountryBall(await Ball.filter(...))
-               ball = CountryBall(await Ball.filter(regime=regime).first())
-           else:
-               ball = await CountryBall.get_random()
-           # NOTE: This would have resulted with a SyntaxError.
-           # special=special,
+        if not countryball:
+            if regime:
+                ball = CountryBall(await Ball.filter(regime=regime).first())
+            else:
+                ball = await CountryBall.get_random()
+        
+        # Pass the special parameter to the spawn method
+        result = await ball.spawn(
+            channel or interaction.channel,
+        )
 
-       # NOTE: Since the `ball` variable is a CountryBall,
-       # you do not have to call the CountryBall class again.
-       # You can just use `ball.spawn` to spawn that countryball.
-       # await CountryBall.spawn(...) -> await ball.spawn(...)
-       result = await ball.spawn(channel or interaction.channel)
+        if not result:
+            return
 
-       if not result:
-           return
+        await interaction.followup.send(
+            f"{settings.collectible_name.title()} spawned.", 
+            ephemeral=True
+        )
 
-       await interaction.followup.send(
-           f"{settings.collectible_name.title()} spawned.", ephemeral=True
-       )
-    
-       await log_action(
-           f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
-           f"in {channel or interaction.channel}",
-           interaction.client,
-       )
+        await log_action(
+            f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
+            f"in {channel or interaction.channel}",
+            interaction.client,
+        )
 
 
     @app_commands.command()

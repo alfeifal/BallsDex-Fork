@@ -9,7 +9,7 @@ from discord.ui import Button, View, button
 from tortoise.exceptions import DoesNotExist
 from tortoise.transactions import atomic
 
-from typing import TYPE_CHECKING, Optional, cast, Dict, Any
+from typing import TYPE_CHECKING, Optional, cast, Dict, Any, Tuple
 
 from ballsdex.core.models import BallInstance, Player, Ball, specials
 from ballsdex.core.utils.transformers import (
@@ -28,14 +28,6 @@ log = logging.getLogger("ballsdex.packages.duos.cog")
 
 # =====================================
 # Define your duos and their requirements here
-# Format:
-# "Duo Name": {
-#     'requirements': {
-#         'Required Ball 1': amount_needed,
-#         'Required Ball 2': amount_needed,
-#     },
-#     'description': "Description of the duo and its effects" (optional)
-# }
 # =====================================
 
 DUOS_AVAILABLE: Dict[str, Dict[str, Any]] = {
@@ -125,7 +117,6 @@ DUOS_AVAILABLE: Dict[str, Dict[str, Any]] = {
     },
 }
 
-
 class Duos(commands.GroupCog):
     """A cog for managing duo cards that can be crafted from combining individual cards."""
     
@@ -150,7 +141,7 @@ class Duos(commands.GroupCog):
         duo_ball = await Ball.filter(country=duo_name).first()
         if not duo_ball:
             await interaction.followup.send(
-                "This duo card is not properly configured in the database. Please contact the owner to fix its name.",
+                "This duo card is not available yet and its just a `preview` for future duo cards.",
                 ephemeral=True
             )
             return None, None, None
@@ -161,23 +152,28 @@ class Duos(commands.GroupCog):
         self,
         player: Player,
         requirements: dict[str, int],
-        amount: int = 1
-    ) -> tuple[dict[str, tuple[Ball, list[BallInstance]]], list[str]]:
+        is_boost: bool = False
+    ) -> Tuple[Dict[str, Tuple[Ball, list[BallInstance]]], Dict[str, Tuple[int, int]]]:
         """
-        Check if a player has the required balls for boosting.
-        Now only requires 1 of each ball regardless of amount parameter.
-
-        Returns a tuple of:
-        - Dictionary mapping ball name to (Ball, list of instances)
-        - List of missing ball names
+        Check if a player has the required balls for crafting/boosting.
+        
+        Args:
+            player: The player to check
+            requirements: Dictionary of ball name to required amount
+            is_boost: If True, only requires 1 of each ball instead of full amount
+            
+        Returns:
+            Tuple of:
+            - Dictionary mapping ball name to (Ball, list of instances)
+            - Dictionary mapping ball name to (current_amount, required_amount)
         """
-        boost_instances: dict[str, tuple[Ball, list[BallInstance]]] = {}
-        missing_balls: list[str] = []
+        boost_instances: Dict[str, Tuple[Ball, list[BallInstance]]] = {}
+        progress_tracking: Dict[str, Tuple[int, int]] = {}
 
-        for ball_name in requirements:
+        for ball_name, required_amount in requirements.items():
             ball = await Ball.get_or_none(country=ball_name)
             if not ball:
-                missing_balls.append(ball_name)
+                progress_tracking[ball_name] = (0, 1 if is_boost else required_amount)
                 continue
 
             # Get available regular instances of this ball
@@ -189,13 +185,33 @@ class Duos(commands.GroupCog):
                 favorite=False,  # Not favorited
             )
 
-            # Now we only need 1 instance regardless of amount
-            if len(instances) < 1:
-                missing_balls.append(ball_name)
-            else:
+            current_amount = len(instances)
+            required = 1 if is_boost else required_amount
+            progress_tracking[ball_name] = (current_amount, required)
+            
+            if current_amount >= required:
                 boost_instances[ball_name] = (ball, instances)
 
-        return boost_instances, missing_balls
+        return boost_instances, progress_tracking
+
+    def format_progress_message(
+        self, 
+        progress_tracking: Dict[str, Tuple[int, int]], 
+        is_boost: bool = False
+    ) -> str:
+        """Format the progress message showing current/required amounts for each ball."""
+        missing_items = []
+        for ball_name, (current, required) in progress_tracking.items():
+            if current >= required:
+                missing_items.append(f"• {ball_name} ✅")
+            else:
+                if is_boost:
+                    missing_items.append(f"• {ball_name}: `{current}/{required}`")
+                else:
+                    missing_items.append(f"• {ball_name}: `{current}/{required}`")
+        
+        action = "boost" if is_boost else "craft"
+        return f"You don't have enough regular (non-special) balls to {action}:\n" + "\n".join(missing_items)
 
     @app_commands.command()
     @app_commands.describe(duo="Select a duo to create")
@@ -217,21 +233,23 @@ class Duos(commands.GroupCog):
                     ephemeral=True
                 )
 
-            # Check requirements
-            required_instances, missing_balls = await self._check_requirements(
+            # Check requirements with progress tracking
+            required_instances, progress_tracking = await self._check_requirements(
                 player,
-                DUOS_AVAILABLE[duo_name]['requirements']
+                DUOS_AVAILABLE[duo_name]['requirements'],
+                is_boost=False
             )
 
-            if missing_balls:
+            if len(required_instances) < len(DUOS_AVAILABLE[duo_name]['requirements']):
                 return await interaction.followup.send(
-                    f"You don't have enough regular (non-special) balls to craft this duo. Missing:\n" + "\n".join(missing_balls),
+                    self.format_progress_message(progress_tracking, is_boost=False),
                     ephemeral=True
                 )
 
             # Ask for confirmation
             requirements_text = "\n".join(
-                f"- {name}: {len(instances)}" for name, (_, instances) in required_instances.items()
+                f"- {name}: {required_amount}" 
+                for name, required_amount in DUOS_AVAILABLE[duo_name]['requirements'].items()
             )
             confirm_view = ConfirmChoiceView(
                 interaction,
@@ -252,7 +270,7 @@ class Duos(commands.GroupCog):
             @atomic()
             async def create_duo():
                 for _, (_, instances) in required_instances.items():
-                    for instance in instances:
+                    for instance in instances[:20]:  # Solo usar los primeros 20
                         await instance.delete()
                 
                 await BallInstance.create(
@@ -283,9 +301,7 @@ class Duos(commands.GroupCog):
             )
 
     @app_commands.command()
-    @app_commands.describe(
-    duo="The duo card to boost"
-    )
+    @app_commands.describe(duo="The duo card to boost")
     @app_commands.choices(duo=[app_commands.Choice(name=name, value=name) for name in DUOS_AVAILABLE])
     async def boost(self, interaction: discord.Interaction, duo: app_commands.Choice[str]):
         """Boost a duo card's stats using additional players."""
@@ -299,27 +315,27 @@ class Duos(commands.GroupCog):
             duo_instance = await BallInstance.filter(player=player, ball=duo_ball).first()
             if not duo_instance:
                 return await interaction.followup.send(
-                    f"You don't have a {duo_name} duo card to boost!",
+                    f"You must get a `{duo_name}` card before boosting it, use `/duo craft`.",
                     ephemeral=True
                 )
 
             # Check if already at max stats
             if duo_instance.attack_bonus >= 20 and duo_instance.health_bonus >= 20:
                 return await interaction.followup.send(
-                    f"Your {duo_name} duo card is already at maximum stats (+20/+20)!",
+                    f"Your {duo_name} duo card cannot be boosted further, it's already maxed",
                     ephemeral=True
                 )
 
-            # Check requirements
-            boost_instances, missing_balls = await self._check_requirements(
+            # Check requirements with progress tracking for boost
+            boost_instances, progress_tracking = await self._check_requirements(
                 player,
                 DUOS_AVAILABLE[duo_name]['requirements'],
-                1  # Always use 1 of each
+                is_boost=True
             )
 
-            if missing_balls:
+            if len(boost_instances) < len(DUOS_AVAILABLE[duo_name]['requirements']):
                 return await interaction.followup.send(
-                    f"You don't have enough regular (non-special) balls to boost. Missing:\n" + "\n".join(missing_balls),
+                    self.format_progress_message(progress_tracking, is_boost=True),
                     ephemeral=True
                 )
 
@@ -332,11 +348,11 @@ class Duos(commands.GroupCog):
 
             if boost_amount <= 0:
                 return await interaction.followup.send(
-                    f"Your {duo_name} duo card cannot be boosted further, its already maxed",
+                    f"Your {duo_name} duo card cannot be boosted further, it's already maxed",
                     ephemeral=True
                 )
 
-        # Ask for confirmation
+            # Ask for confirmation
             requirements_text = "\n".join(
                 f"- {name}: 1" for name in boost_instances.keys()
             )
@@ -347,7 +363,7 @@ class Duos(commands.GroupCog):
             )
 
             await interaction.followup.send(
-                f"Are you sure you want to boost your {duo_name} duo card? This will consume:\n`{requirements_text}`\n"
+                f"Are you sure you want to boost your {duo_name} duo card? This will consume:\n{requirements_text}\n"
                 f"This will give +1 to both ATK and HP.",
                 ephemeral=True,
                 view=confirm_view
@@ -360,7 +376,7 @@ class Duos(commands.GroupCog):
             @atomic()
             async def boost_duo():
                 for _, (_, instances) in boost_instances.items():
-                # Only delete one instance of each required ball
+                    # Only delete one instance of each required ball
                     await instances[0].delete()
 
                 duo_instance.attack_bonus += boost_amount
@@ -371,7 +387,7 @@ class Duos(commands.GroupCog):
 
             await interaction.followup.send(
                 f"Successfully boosted your {duo_name} duo card! New stats: "
-                f"`ATK:{duo_instance.attack_bonus:+d}% HP:{duo_instance.health_bonus:+d}%`",
+                f"ATK:{duo_instance.attack_bonus:+d}% HP:{duo_instance.health_bonus:+d}%",
                 ephemeral=True
             )
 
@@ -415,7 +431,7 @@ class Duos(commands.GroupCog):
                     # Get the required ball model and its emoji
                     req_ball = await Ball.filter(country=req_name).first()
                     if req_ball:
-                        req_emoji = f"{self.bot.get_emoji(req_ball.emoji_id)}" if req_ball.emoji_id else "🔵"
+                        req_emoji = f"{self.bot.get_emoji(req_ball.emoji_id)}" if req_ball.emoji_id else ""
                         requirements_lines.append(f"• {req_emoji} {req_name}: {amount} needed")
                     else:
                         requirements_lines.append(f"• {req_name}: {amount} needed")

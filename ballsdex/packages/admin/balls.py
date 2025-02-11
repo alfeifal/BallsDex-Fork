@@ -48,6 +48,7 @@ class Balls(app_commands.Group):
         self,
         interaction: discord.Interaction[BallsDexBot],
         countryball: Ball | None,
+        regime: RegimeTransform | None,
         channel: discord.TextChannel,
         n: int,
     ):
@@ -74,9 +75,10 @@ class Balls(app_commands.Group):
         try:
             for i in range(n):
                 if not countryball:
-                    ball = await CountryBall.get_random()
-                else:
-                    ball = CountryBall(countryball)
+                    if regime:
+                        ball = CountryBall(await Ball.filter(regime=regime).first())
+                    else:
+                        ball = await CountryBall.get_random()
                 result = await ball.spawn(channel)
                 if not result:
                     task.cancel()
@@ -129,7 +131,7 @@ class Balls(app_commands.Group):
 
         if n > 1:
             await self._spawn_bomb(
-                interaction, countryball, channel or interaction.channel, n, special  # type: ignore
+                interaction, countryball, regime, channel or interaction.channel, n  # type: ignore
             )
             await log_action(
                 f"{interaction.user} spawned {settings.collectible_name}",

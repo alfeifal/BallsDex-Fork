@@ -16,7 +16,8 @@ from ballsdex.core.utils.transformers import BallEnabledTransform
 from ballsdex.core.utils.transformers import SpecialTransform, BallTransform
 from ballsdex.core.utils.transformers import SpecialEnabledTransform
 from ballsdex.core.utils.paginator import FieldPageSource, Pages
-from ballsdex.core.bot import BallsDexBot
+from ballsdex.core.utils.logging import log_action
+from ballsdex.settings import settings
 
 if TYPE_CHECKING:
     from ballsdex.core.bot import BallsDexBot
@@ -64,29 +65,16 @@ from ballsdex.core.models import (
 # 6. Step 3-5 is repeated until the boss' HP runs out, but you can end early with Step 7.
 # 7. /boss admin conclude ends the boss battle and rewards the winner, but you can choose to have *no* winner (ADMIN ONLY)
 
-SHINYBUFFS = [1000,1000] # Shiny Buffs
+SHINYBUFFS = [2000,2000] # Shiny Buffs
+CHRISTMASBUFFS = [500,500] # Shiny Buffs
+MYTHICBUFFS = [3000,3000] # Shiny Buffs
+BOSSBUFFS = [4000,4000] # Shiny Buffs
 # ATK, HP
-MAXSTATS = [5000,5000] # Max stats a card is limited to (before buffs)
+MAXSTATS = [10000,10000] # Max stats a card is limited to (before buffs)
 # ATK, HP
-DAMAGERNG = [0,2000] # Damage a boss can deal IF attack_amount has NOT been inputted in /boss admin attack.
+DAMAGERNG = [5000,8000] # Damage a boss can deal IF attack_amount has NOT been inputted in /boss admin attack.
 # Min Damage, Max Damage
 
-LOGCHANNEL = settings.log_channel
-#Change this if you want to a different channel for boss logs
-#e.g.
-#LOGCHANNEL = 1234567890987654321
-async def log_action(message: str, bot: BallsDexBot, console_log: bool = False):
-    if LOGCHANNEL:
-        channel = bot.get_channel(LOGCHANNEL)
-        if not channel:
-            log.warning(f"Channel {LOGCHANNEL} not found")
-            return
-        if not isinstance(channel, discord.TextChannel):
-            log.warning(f"Channel {channel.name} is not a text channel")  # type: ignore
-            return
-        await channel.send(message)
-    if console_log:
-        log.info(message)
 
 @app_commands.guilds(*settings.admin_guild_ids)
 class Boss(commands.GroupCog):
@@ -108,61 +96,40 @@ class Boss(commands.GroupCog):
         self.attack = False
         self.bossattack = 0
         self.bossball = None
-        self.bosswildd = []
-        self.bosswilda = []
+        self.bosswild = None
         self.disqualified = []
-        self.lasthitter = 0
 
     bossadmin = app_commands.Group(name="admin", description="admin commands for boss")
 
     @bossadmin.command(name="start")
     @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
-    async def start(
-        self,
-        interaction: discord.Interaction,
-        countryball: BallTransform,
-        hp_amount: int,
-        start_image: discord.Attachment | None = None,
-        defend_image: discord.Attachment | None = None,
-        attack_image: discord.Attachment | None = None):
+    async def start(self, interaction: discord.Interaction, ball: BallTransform, hp_amount: int):
         """
         Start the boss
         """
-        ball = countryball
         if self.boss_enabled == True:
             return await interaction.response.send_message(f"There is already an ongoing boss battle", ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
         self.bossHP = hp_amount
         def generate_random_name():
             source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
             return "".join(random.choices(source, k=15))
-        if start_image == None:
-            extension = ball.collection_card.split(".")[-1]
-            file_location = "." + ball.collection_card
-            file_name = f"nt_{generate_random_name()}.{extension}"
-            file=discord.File(file_location, filename=file_name)
-        else:
-            file = await start_image.to_file()
-        await interaction.followup.send(
+        extension = ball.collection_card.split(".")[-1]
+        file_location = "." + ball.collection_card
+        file_name = f"nt_{generate_random_name()}.{extension}"
+        await interaction.response.send_message(
             f"Boss successfully started", ephemeral=True
         )
-        await interaction.channel.send((f"# The boss battle has begun! {self.bot.get_emoji(ball.emoji_id)}\n-# HP: {self.bossHP}"),file=file,)
+        await interaction.channel.send((f"# The boss battle has begun! {self.bot.get_emoji(ball.emoji_id)}\n-# HP: {self.bossHP}"),file=discord.File(file_location, filename=file_name),)
         await interaction.channel.send("> Use `/boss join` to join the battle!")
         if ball != None:
             self.boss_enabled = True
             self.bossball = ball
-            if defend_image == None:
-                self.bosswildd.append(None)
-                self.bosswildd.append(1)
-            else:
-                self.bosswildd.append(defend_image)
-                self.bosswildd.append(2)
-            if attack_image == None:
-                self.bosswilda.append(None)
-                self.bosswilda.append(1)
-            else:
-                self.bosswilda.append(attack_image)
-                self.bosswilda.append(2)
+
+            extension = ball.wild_card.split(".")[-1]
+            file_location = "." + ball.wild_card
+            file_name = f"nt_{generate_random_name()}.{extension}"
+            self.bosswild = file=discord.File(file_location, filename=file_name)
+
     @bossadmin.command(name="attack")
     @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
     async def attack(self, interaction: discord.Interaction, attack_amount: int | None = None):
@@ -178,22 +145,18 @@ class Boss(commands.GroupCog):
         if self.bossHP <= 0:
             return await interaction.response.send_message("The Boss is dead", ephemeral=True)
         self.round += 1
-        await interaction.response.defer(ephemeral=True, thinking=True)
+
         def generate_random_name():
             source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
             return "".join(random.choices(source, k=15))
         extension = self.bossball.wild_card.split(".")[-1]
         file_location = "." + self.bossball.wild_card
         file_name = f"nt_{generate_random_name()}.{extension}"
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"Round successfully started", ephemeral = True
         )
-        if self.bosswilda[1] == 2: #if custom image
-            file = await self.bosswilda[0].to_file()
-        else:
-            file = discord.File(file_location, filename=file_name)
         await interaction.channel.send(
-            (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"),file=file
+            (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"),file=discord.File(file_location, filename=file_name)
         )
         await interaction.channel.send(f"> Use `/boss select` to select your defending {settings.collectible_name}.\n> Your selected {settings.collectible_name}'s HP will be used to defend.")
         self.picking = True
@@ -215,22 +178,18 @@ class Boss(commands.GroupCog):
         if self.bossHP <= 0:
             return await interaction.response.send_message("The Boss is dead", ephemeral=True)
         self.round += 1
-        await interaction.response.defer(ephemeral=True, thinking=True)
+
         def generate_random_name():
             source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
             return "".join(random.choices(source, k=15))
         extension = self.bossball.wild_card.split(".")[-1]
         file_location = "." + self.bossball.wild_card
         file_name = f"nt_{generate_random_name()}.{extension}"
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"Round successfully started", ephemeral=True
         )
-        if self.bosswildd[1] == 2: #if custom image
-            file = await self.bosswildd[0].to_file()
-        else:
-            file = discord.File(file_location, filename=file_name)
         await interaction.channel.send(
-            (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"),file=file
+            (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"),file=discord.File(file_location, filename=file_name)
         )
         await interaction.channel.send(f"> Use `/boss select` to select your attacking {settings.collectible_name}.\n> Your selected {settings.collectible_name}'s ATK will be used to attack.")
         self.picking = True
@@ -249,11 +208,10 @@ class Boss(commands.GroupCog):
             return await interaction.response.send_message(
                 f"There are no ongoing rounds, use `/boss attack` or `/boss defend` to start one", ephemeral=True
             )
-        await interaction.response.defer(ephemeral=True, thinking=True)
         self.picking = False
         with open("roundstats.txt", "w") as file:
             file.write(f"{self.currentvalue}")
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"Round successfully ended", ephemeral=True
         )
         if not self.attack:
@@ -293,11 +251,10 @@ class Boss(commands.GroupCog):
         """
         See current stats of the boss
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
         with open("stats.txt","w") as file:
-            file.write(f"Boss:{self.bossball}\nCurrentValue:\n\n{self.currentvalue}\nUsers:{self.users}\nDisqualifiedUsers:{self.disqualified}\nUsersDamage:{self.usersdamage}\nBalls:{self.balls}\nUsersInRound:{self.usersinround}")
+            file.write(f"Boss:{self.bossball}\nCurrentValue:{self.currentvalue}\nUsers:{self.users}\n\nUsersDamage:{self.usersdamage}\n\nBalls:{self.balls}\n\nUsersInRound:{self.usersinround}")
         with open("stats.txt","rb") as file:
-            return await interaction.followup.send(file=discord.File(file,"stats.txt"), ephemeral=True)
+            return await interaction.response.send_message(file=discord.File(file,"stats.txt"), ephemeral=True)
 
     @bossadmin.command(name="disqualify")
     @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
@@ -311,9 +268,8 @@ class Boss(commands.GroupCog):
         """
         Disqualify a member from the boss
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
         if (user and user_id) or (not user and not user_id):
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "You must provide either `user` or `user_id`.", ephemeral=True
             )
             return
@@ -322,12 +278,12 @@ class Boss(commands.GroupCog):
             try:
                 user = await self.bot.fetch_user(int(user_id))  # type: ignore
             except ValueError:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     "The user ID you gave is not valid.", ephemeral=True
                 )
                 return
             except discord.NotFound:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     "The given user ID could not be found.", ephemeral=True
                 )
                 return
@@ -336,32 +292,32 @@ class Boss(commands.GroupCog):
         if int(user_id) in self.disqualified:
             if undisqualify == True:
                 self.disqualified.remove(int(user_id))
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{user} has been removed from disqualification.\nUse `/boss admin hackjoin` to join the user back.", ephemeral=True
                 )
             else:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{user} has already been disqualified.\nSet `undisqualify` to `True` to remove a user from disqualification.", ephemeral=True
                 )
         elif undisqualify == True:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"{user} has **not** been disqualified yet.", ephemeral=True
             )
         elif self.boss_enabled != True:
             self.disqualified.append(int(user_id))
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"{user} will be disqualified from the next fight.", ephemeral=True
             )
         elif int(user_id) not in self.users:
             self.disqualified.append(int(user_id))
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"{user} has been disqualified successfully.", ephemeral=True
             )
             return
         else:
             self.users.remove(int(user_id))
             self.disqualified.append(int(user_id))
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"{user} has been disqualified successfully.", ephemeral=True
             )
             return
@@ -371,8 +327,9 @@ class Boss(commands.GroupCog):
     async def select(
         self,
         interaction: discord.Interaction,
-        countryball: BallInstanceTransform,
+        ball: BallInstanceTransform,
         special: SpecialEnabledTransform | None = None,
+        shiny: bool | None = None,
     ):
         """
         Select countryball to use against the boss.
@@ -383,28 +340,28 @@ class Boss(commands.GroupCog):
             The countryball you want to select
         special: Special
             Filter the results of autocompletion to a special event. Ignored afterwards.
+        shiny: bool
+            Filter the results of autocompletion to shinies. Ignored afterwards.
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        ball = countryball
         if [int(interaction.user.id),self.round] in self.usersinround:
-            return await interaction.followup.send(
-                f"You have already selected a {settings.collectible_name}", ephemeral=True
+            return await interaction.response.send_message(
+                f"You have already selected an {settings.collectible_name}", ephemeral=True
             )
         if not self.boss_enabled:
-            return await interaction.followup.send("Boss is disabled", ephemeral=True)
+            return await interaction.response.send_message("Boss is disabled", ephemeral=True)
         if not self.picking:
-            return await interaction.followup.send(f"It is not yet time to select a {settings.collectible_name}", ephemeral=True)
+            return await interaction.response.send_message(f"It is not yet time to select an {settings.collectible_name}", ephemeral=True)
         if interaction.user.id not in self.users:
-            return await interaction.followup.send(
+            return await interaction.response.send_message(
                 "You did not join, or you're dead/disqualified.", ephemeral=True
             )
         if not ball.is_tradeable:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"You cannot use this {settings.collectible_name}.", ephemeral=True
             )
             return
         if ball in self.balls:
-            return await interaction.followup.send(
+            return await interaction.response.send_message(
                 f"You cannot select the same {settings.collectible_name} twice", ephemeral=True
             )
         if ball == None:
@@ -428,14 +385,26 @@ class Boss(commands.GroupCog):
             messageforuser = f"{ball.description(short=True, include_emoji=True, bot=self.bot)} has been selected for this round, with {ballattack}+{SHINYBUFFS[0]} ATK and {ballhealth}+{SHINYBUFFS[1]} HP"
             ballhealth += SHINYBUFFS[1]
             ballattack += SHINYBUFFS[0]
+        elif "❄️" in messageforuser:
+            messageforuser = f"{ball.description(short=True, include_emoji=True, bot=self.bot)} has been selected for this round, with {ballattack}+{CHRISTMASBUFFS[0]} ATK and {ballhealth}+{CHRISTMASBUFFS[1]} HP"
+            ballhealth += CHRISTMASBUFFS[1]
+            ballattack += CHRISTMASBUFFS[0]
+        elif "💫" in messageforuser:
+            messageforuser = f"{ball.description(short=True, include_emoji=True, bot=self.bot)} has been selected for this round, with {ballattack}+{MYTHICBUFFS[0]} ATK and {ballhealth}+{MYTHICBUFFS[1]} HP"
+            ballhealth += MYTHICBUFFS[1]
+            ballattack += MYTHICBUFFS[0]
+        elif "⚔️" in messageforuser:
+            messageforuser = f"{ball.description(short=True, include_emoji=True, bot=self.bot)} has been selected for this round, with {ballattack}+{BOSSBUFFS[0]} ATK and {ballhealth}+{BOSSBUFFS[1]} HP"
+            ballhealth += BOSSBUFFS[1]
+            ballattack += BOSSBUFFS[0]
         else:
             pass
+
 
         if not self.attack:
             self.bossHP -= ballattack
             self.usersdamage.append([int(interaction.user.id),ballattack,ball.description(short=True, include_emoji=True, bot=self.bot)])
             self.currentvalue += (str(interaction.user)+"'s "+str(ball.description(short=True, bot=self.bot))+" has dealt "+(str(ballattack))+" damage!\n")
-            self.lasthitter = int(interaction.user.id)
         else:
             if self.bossattack >= ballhealth:
                 self.users.remove(interaction.user.id)
@@ -443,7 +412,7 @@ class Boss(commands.GroupCog):
             else:
                 self.currentvalue += (str(interaction.user)+"'s "+str(ball.description(short=True, bot=self.bot)) + " had " + (str(ballhealth)) + "HP and survived!\n")
 
-        await interaction.followup.send(
+        await interaction.response.send_message(
             messageforuser, ephemeral=True
         )
         await log_action(
@@ -456,7 +425,6 @@ class Boss(commands.GroupCog):
         """
         Show your damage to the boss in the current fight.
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
         snapshotdamage = self.usersdamage.copy()
         ongoingvalue = ("")
         ongoingfull = 0
@@ -467,45 +435,19 @@ class Boss(commands.GroupCog):
                 ongoingfull += snapshotdamage[i][1]
         if ongoingfull == 0:
             if interaction.user.id in self.users:
-                await interaction.followup.send("You have not dealt any damage.",ephemeral=True)
+                await interaction.response.send_message("You have not dealt any damage.",ephemeral=True)
             elif interaction.user.id in self.disqualified:
-                await interaction.followup.send("You have been disqualified.",ephemeral=True)
+                await interaction.response.send_message("You have been disqualified.",ephemeral=True)
             else:
-                await interaction.followup.send("You have not joined the battle, or you have died.",ephemeral=True)
+                await interaction.response.send_message("You have not joined the battle, or you have died.",ephemeral=True)
         else:
             if interaction.user.id in self.users:
-                await interaction.followup.send(f"You have dealt {ongoingfull} damage.\n{ongoingvalue}",ephemeral=True)
+                await interaction.response.send_message(f"You have dealt {ongoingfull} damage.\n{ongoingvalue}",ephemeral=True)
             elif interaction.user.id in self.disqualified:
-                await interaction.followup.send(f"You have dealt {ongoingfull} damage and have been disqualified.\n{ongoingvalue}",ephemeral=True)
+                await interaction.response.send_message(f"You have dealt {ongoingfull} damage and have been disqualified.\n{ongoingvalue}",ephemeral=True)
             else:
-                await interaction.followup.send(f"You have dealt {ongoingfull} damage and you are now dead.\n{ongoingvalue}",ephemeral=True)
+                await interaction.response.send_message(f"You have dealt {ongoingfull} damage and you are now dead.\n{ongoingvalue}",ephemeral=True)
 
-    @bossadmin.command(name="ping")
-    @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
-    async def ping(self, interaction: discord.Interaction, unselected: bool | None = False):
-        """
-        Ping all the alive players
-        """
-        snapshotusers = self.users.copy()
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        if len(snapshotusers) == 0:
-            return await interaction.followup.send("There are no users joined/remaining",ephemeral=True)
-        pingsmsg = "-#"
-        if unselected:
-            for userid in snapshotusers:
-                if [userid,self.round] not in self.usersinround:
-                    pingsmsg = pingsmsg+" <@"+str(userid)+">"
-        else:
-            for userid in snapshotusers:
-                pingsmsg = pingsmsg+" <@"+str(userid)+">"
-        if pingsmsg == "-#":
-            await interaction.followup.send("All users have selected",ephemeral=True)
-        elif len(pingsmsg) < 2000:
-            await interaction.followup.send("Ping Successful",ephemeral=True)
-            await interaction.channel.send(pingsmsg)
-        else:
-            await interaction.followup.send("Message too long, exceeds 2000 character limit",ephemeral=True)
-            
 
     @bossadmin.command(name="conclude")
     @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
@@ -513,7 +455,6 @@ class Boss(commands.GroupCog):
         winner=[
             app_commands.Choice(name="Random", value="RNG"),
             app_commands.Choice(name="Most Damage", value="DMG"),
-            app_commands.Choice(name="Last Hitter", value="LAST"),
             app_commands.Choice(name="No Winner", value="None"),
         ]
     )
@@ -521,7 +462,6 @@ class Boss(commands.GroupCog):
         """
         Finish the boss, conclude the Winner
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
         self.picking = False
         self.boss_enabled = False
         test = self.usersdamage
@@ -552,16 +492,14 @@ class Boss(commands.GroupCog):
                 if totalnum[k][1] > highest:
                     highest = totalnum[k][1]
                     bosswinner = totalnum[k][0]
-        elif winner == "LAST":
-            bosswinner = self.lasthitter
         else:
             if len(totalnum) != 0:
                 bosswinner = totalnum[random.randint(0,len(totalnum)-1)][0]
         if bosswinner == 0:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"Boss successfully concluded", ephemeral=True
             )
-            await interaction.channel.send(f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has won the Boss Battle!")
+            await interaction.channel.send(f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\n💀 ᴛʜᴇ ʙᴏꜱꜱ ᴘʀᴏᴠᴇᴅ ᴜɴꜱᴛᴏᴘᴘᴀʙʟᴇ, ᴄʀᴜꜱʜɪɴɢ ᴀʟʟ ᴡʜᴏ ᴅᴀʀᴇᴅ ᴛᴏ ꜰᴀᴄᴇ ɪᴛ ᴀɴᴅ ꜱᴇᴄᴜʀɪɴɢ ɪᴛꜱ ꜰɪᴇʀᴄᴇ ᴅᴏᴍɪɴɪᴏɴ. 💀!")
             with open("totalstats.txt", "w") as file:
                 file.write(f"{total}{total2}")
             with open("totalstats.txt", "rb") as file:
@@ -577,10 +515,8 @@ class Boss(commands.GroupCog):
             self.attack = False
             self.bossattack = 0
             self.bossball = None
-            self.bosswildd = []
-            self.bosswilda = []
+            self.bosswild = None
             self.disqualified = []
-            self.lasthitter = 0
             return
         if winner != "None":
             player, created = await Player.get_or_create(discord_id=bosswinner)
@@ -588,29 +524,27 @@ class Boss(commands.GroupCog):
             instance = await BallInstance.create(
                 ball=self.bossball,
                 player=player,
+                shiny=False,
                 special=special,
                 attack_bonus=0,
                 health_bonus=0,
             )
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"Boss successfully concluded", ephemeral=True
             )
             await interaction.channel.send(
-                f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\n<@{bosswinner}> has won the Boss Battle!\n\n"
+                f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\n👑 <@{bosswinner}>  ꜱᴛᴏᴏᴅ ᴛᴀʟʟ ᴀɢᴀɪɴꜱᴛ ᴏᴅᴅꜱ ᴀɴᴅ ᴄʟᴀɪᴍᴇᴅ ᴠɪᴄᴛᴏʀʏ ꜰʀᴏᴍ ᴀ ᴍɪɢʜᴛʏ ʙᴏꜱꜱ, ᴡʀɪᴛɪɴɢ ᴛʜᴇɪʀ ɴᴀᴍᴇ ɪɴ ʟᴇɢᴇɴᴅꜱ. 👑\n\n"
                 f"`Boss` `{self.bossball}` {settings.collectible_name} was successfully given.\n"
             )
             bosswinner_user = await self.bot.fetch_user(int(bosswinner))
 
             await log_action(
                 f"`BOSS REWARDS` gave {settings.collectible_name} {self.bossball.country} to {bosswinner_user}. "
-                f"Special=Boss"
-                f"ATK=0 HP=0",
+                f"Special=Boss ATK=0 "
+                f"HP=0 shiny=None",
                 self.bot,
             )
         else:
-            await interaction.followup.send(
-                f"Boss successfully concluded", ephemeral=True
-            )
             await interaction.channel.send(f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!")
         with open("totalstats.txt", "w") as file:
             file.write(f"{total}{total2}")
@@ -627,33 +561,30 @@ class Boss(commands.GroupCog):
         self.attack = False
         self.bossattack = 0
         self.bossball = None
-        self.bosswildd = []
-        self.bosswilda = []
+        self.bosswild = None
         self.disqualified = []
-        self.lasthitter = 0
 
     @app_commands.command()
     async def join(self, interaction: discord.Interaction):
         """
         Join the boss battle!.
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
         if not self.boss_enabled:
-            return await interaction.followup.send("Boss is disabled", ephemeral=True)
+            return await interaction.response.send_message("Boss is disabled", ephemeral=True)
         if int(interaction.user.id) in self.disqualified:
-            return await interaction.followup.send("You have been disqualified", ephemeral=True)
+            return await interaction.response.send_message("You have been disqualified", ephemeral=True)
         if [int(interaction.user.id),self.round] in self.usersinround:
-            return await interaction.followup.send("You have already joined the boss", ephemeral=True)
+            return await interaction.response.send_message("You have already joined the boss", ephemeral=True)
         if self.round != 0 and interaction.user.id not in self.users:
-            return await interaction.followup.send(
+            return await interaction.response.send_message(
                 "It is too late to join the boss, or you have died", ephemeral=True
             )
         if interaction.user.id in self.users:
-            return await interaction.followup.send(
+            return await interaction.response.send_message(
                 "You have already joined the boss", ephemeral=True
             )
         self.users.append(interaction.user.id)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             "You have joined the Boss Battle!", ephemeral=True
         )
         await log_action(
@@ -672,9 +603,8 @@ class Boss(commands.GroupCog):
         """
         Join a user to the boss battle.
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
         if (user and user_id) or (not user and not user_id):
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "You must provide either `user` or `user_id`.", ephemeral=True
             )
             return
@@ -683,12 +613,12 @@ class Boss(commands.GroupCog):
             try:
                 user = await self.bot.fetch_user(int(user_id))  # type: ignore
             except ValueError:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     "The user ID you gave is not valid.", ephemeral=True
                 )
                 return
             except discord.NotFound:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     "The given user ID could not be found.", ephemeral=True
                 )
                 return
@@ -696,17 +626,17 @@ class Boss(commands.GroupCog):
             user_id = user.id
 
         if not self.boss_enabled:
-            return await interaction.followup.send("Boss is disabled", ephemeral=True)
+            return await interaction.response.send_message("Boss is disabled", ephemeral=True)
         if [int(user_id), self.round] in self.usersinround:
-            return await interaction.followup.send("This user is already in the boss battle.", ephemeral=True)
+            return await interaction.response.send_message("This user is already in the boss battle.", ephemeral=True)
         if int(user_id) in self.users:
-            return await interaction.followup.send(
+            return await interaction.response.send_message(
                 "This user is already in the boss battle.", ephemeral=True
             )
         self.users.append(user_id)
         if user_id in self.disqualified:
             self.disqualified.remove(user_id)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"{user} has been hackjoined into the Boss Battle.", ephemeral=True
         )
         await log_action(

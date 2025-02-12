@@ -77,7 +77,7 @@ DAMAGERNG = [5000,8000] # Damage a boss can deal IF attack_amount has NOT been i
 LOGCHANNEL = settings.log_channel
 #Change this if you want to a different channel for boss logs
 #e.g.
-#LOGCHANNEL = 1234567890987654321
+#LOGCHANNEL = 1331582589663838270
 async def log_action(message: str, bot: BallsDexBot, console_log: bool = False):
     if LOGCHANNEL:
         channel = bot.get_channel(LOGCHANNEL)

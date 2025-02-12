@@ -10,7 +10,7 @@ from discord.utils import format_dt
 from tortoise.exceptions import BaseORMException, DoesNotExist
 
 from ballsdex.core.bot import BallsDexBot
-from ballsdex.core.models import Ball, BallInstance, Player, Trade, TradeObject, Regime
+from ballsdex.core.models import Ball, BallInstance, Player, Trade, TradeObject, Regime, Special
 from ballsdex.core.utils.buttons import ConfirmChoiceView
 from ballsdex.core.utils.logging import log_action
 from ballsdex.core.utils.transformers import (
@@ -51,6 +51,9 @@ class Balls(app_commands.Group):
         regime: RegimeTransform | None,
         channel: discord.TextChannel,
         n: int,
+        special: Special | None = None,
+        atk_bonus: int | None = None,
+        hp_bonus: int | None = None,
     ):
         spawned = 0
 
@@ -79,6 +82,9 @@ class Balls(app_commands.Group):
                         ball = CountryBall(await Ball.filter(regime=regime).first())
                     else:
                         ball = await CountryBall.get_random()
+                    ball.special = special
+                    ball.atk_bonus = atk_bonus
+                    ball.hp_bonus = hp_bonus
                 result = await ball.spawn(channel)
                 if not result:
                     task.cancel()
@@ -108,6 +114,9 @@ class Balls(app_commands.Group):
         regime: RegimeTransform | None = None,
         channel: discord.TextChannel | None = None,
         n: app_commands.Range[int, 1, 100] = 1,
+        special: Special | None = None,
+        atk_bonus: int | None = None,
+        hp_bonus: int | None = None,
     ):
         """
         Force spawns a random or specified countryball, optionally from a specified regime with optional special status.
@@ -115,16 +124,18 @@ class Balls(app_commands.Group):
         Parameters
         ----------
         countryball: Ball | None
-            The countryball you want to spawn. Random according to rarities if not specified.
-        regime: Regime | None
-            The regime from which to spawn a countryball. Ignored if a countryball is specified.
+                The countryball you want to spawn. Random according to rarities if not specified.
         channel: discord.TextChannel | None
             The channel you want to spawn the countryball in. Current channel if not specified.
-        special: Special | None
-            The special event to apply to the spawned ball. Random according to current events if not specified.
         n: int
-            The number of countryballs to spawn. If no countryball was specified,
-            it's random every time.
+            The number of countryballs to spawn. If no countryball was specified, it's random
+            every time.
+        special: Special | None
+            Force the countryball to have a special attribute when caught.
+        atk_bonus: int | None
+            Force the countryball to have a specific attack bonus when caught.
+        hp_bonus: int | None
+            Force the countryball to have a specific health bonus when caught.
         """
         if interaction.response.is_done():
             return
@@ -147,25 +158,28 @@ class Balls(app_commands.Group):
                 ball = CountryBall(await Ball.filter(regime=regime).first())
             else:
                 ball = await CountryBall.get_random()
-        
-        # Pass the special parameter to the spawn method
-        result = await ball.spawn(
-            channel or interaction.channel,
-        )
+            ball.special = special
+            ball.atk_bonus = atk_bonus
+            ball.hp_bonus = hp_bonus
+            result = await ball.spawn(channel or interaction.channel)
 
-        if not result:
-            return
-
-        await interaction.followup.send(
-            f"{settings.collectible_name.title()} spawned.", 
-            ephemeral=True
-        )
-
-        await log_action(
-            f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
-            f"in {channel or interaction.channel}",
-            interaction.client,
-        )
+        if result:
+            await interaction.followup.send(
+                f"{settings.collectible_name.title()} spawned.", ephemeral=True
+            )
+            special_attrs = []
+            if special is not None:
+                special_attrs.append(f"special={special.name}")
+            if atk_bonus is not None:
+                special_attrs.append(f"atk={atk_bonus}")
+            if hp_bonus is not None:
+                special_attrs.append(f"hp={hp_bonus}")
+            await log_action(
+                f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
+                f"in {channel or interaction.channel}"
+                f"{f" ({", ".join(special_attrs)})" if special_attrs else ""}.",
+                interaction.client,
+            )
 
 
     @app_commands.command()

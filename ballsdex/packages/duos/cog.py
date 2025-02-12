@@ -258,7 +258,7 @@ class Duos(commands.GroupCog):
             )
             
             await interaction.followup.send(
-                f"Are you sure you want to craft the duo card {duo_name}? This will consume:\n{requirements_text}",
+                f"Are you sure you want to craft the duo card {duo_name}? This will consume:\n`{requirements_text}`",
                 ephemeral=True,
                 view=confirm_view
             )
@@ -348,7 +348,7 @@ class Duos(commands.GroupCog):
 
             if boost_amount <= 0:
                 return await interaction.followup.send(
-                    f"Your {duo_name} duo card cannot be boosted further, it's already maxed",
+                    f"You don't have a {duo_name} duo card yet, claim it by using /duos craft.",
                     ephemeral=True
                 )
 
@@ -363,7 +363,7 @@ class Duos(commands.GroupCog):
             )
 
             await interaction.followup.send(
-                f"Are you sure you want to boost your {duo_name} duo card? This will consume:\n{requirements_text}\n"
+                f"Are you sure you want to boost your {duo_name} duo card? This will consume:\n`{requirements_text}`\n"
                 f"This will give +1 to both ATK and HP.",
                 ephemeral=True,
                 view=confirm_view
@@ -387,7 +387,7 @@ class Duos(commands.GroupCog):
 
             await interaction.followup.send(
                 f"Successfully boosted your {duo_name} duo card! New stats: "
-                f"ATK:{duo_instance.attack_bonus:+d}% HP:{duo_instance.health_bonus:+d}%",
+                f"`ATK:{duo_instance.attack_bonus:+d}% HP:{duo_instance.health_bonus:+d}`%",
                 ephemeral=True
             )
 
@@ -431,7 +431,7 @@ class Duos(commands.GroupCog):
                     # Get the required ball model and its emoji
                     req_ball = await Ball.filter(country=req_name).first()
                     if req_ball:
-                        req_emoji = f"{self.bot.get_emoji(req_ball.emoji_id)}" if req_ball.emoji_id else ""
+                        req_emoji = f"{self.bot.get_emoji(req_ball.emoji_id)}" if req_ball.emoji_id else "🔵"
                         requirements_lines.append(f"• {req_emoji} {req_name}: {amount} needed")
                     else:
                         requirements_lines.append(f"• {req_name}: {amount} needed")

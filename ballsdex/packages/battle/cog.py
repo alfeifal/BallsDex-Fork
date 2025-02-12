@@ -21,7 +21,8 @@ from ballsdex.settings import settings
 
 from ballsdex.core.utils.transformers import (
     BallInstanceTransform,
-    BallTransform
+    BallTransform,
+    SpecialEnabledTransform
 )
 
 from ballsdex.packages.battle.xe_battle_lib import (
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
 log = logging.getLogger("ballsdex.packages.battle")
 
 battles = []
+highevent = ("Testers","Birthday Ball","Eid al-Adha","Realm")
+lowevent = ("Lunar New Year 2025","Christmas 2024","Summer")
 
 @dataclass
 class GuildBattle:
@@ -56,12 +59,12 @@ def gen_deck(balls) -> str:
         return "Empty"
     deck = "\n".join(
         [
-            f"- {ball.emoji} {ball.name} (HP: {ball.health} | DMG: {ball.attack})"
+            f"- {ball.emoji} {ball.name} (HP: {ball.health} | ATK: {ball.attack})"
             for ball in balls
         ]
     )
-    if len(deck) > 1024:
-        return deck[0:951] + '\n<truncated due to discord limits, the rest of your balls are still here>'
+    if len(deck) > 6000:
+        return deck[0:941] + f'\nTotal: {len(balls)}'
     return deck
 
 def update_embed(
@@ -365,13 +368,43 @@ class Battle(commands.GroupCog):
             else guild_battle.battle.p2_balls
         )
         # Create the BattleBall instance
-
+        maxvalue = 200000 if settings.bot_name == "dragonballdex" else 14000
         for countryball in countryballs:
+            battlespecial = await countryball.special
+            battlespecial = (f"{battlespecial}")
+            if battlespecial == "Shiny":
+                buff = 5000 if settings.bot_name == "dragonballdex" else 5000
+            elif battlespecial == "Mythical":
+                buff = 10000 if settings.bot_name == "dragonballdex" else 12000
+            elif battlespecial == "Boss" or battlespecial == "Collector":
+                buff = 6000 if settings.bot_name == "dragonballdex" else 6000
+            elif battlespecial == "Diamond":
+                buff = 8000 if settings.bot_name == "dragonballdex" else 8000
+            elif battlespecial == "Emerald":
+                buff = 120000 if settings.bot_name == "dragonballdex" else 14000
+            elif battlespecial == "Christmas":
+                buff = 1250
+            elif battlespecial == None or battlespecial == "None":
+                buff = 0
+            else:
+                buff = 1000
+            if countryball.health < 0:
+                countryballhealth = 0
+            elif countryball.health > maxvalue:
+                countryballhealth = maxvalue
+            else:
+                countryballhealth = countryball.health
+            if countryball.attack < 0:
+                countryballattack = 0
+            elif countryball.attack > maxvalue:
+                countryballattack = maxvalue
+            else:
+                countryballattack = countryball.attack
             ball = BattleBall(
-                countryball.countryball.country,
+                countryball.description(short=True, include_emoji=False, bot=self.bot),
                 interaction.user.name,
-                countryball.health,
-                countryball.attack,
+                (countryballhealth + buff),
+                (countryballattack + buff),
                 self.bot.get_emoji(countryball.countryball.emoji_id),
             )
 
@@ -430,12 +463,49 @@ class Battle(commands.GroupCog):
         )
         # Create the BattleBall instance
 
+        maxvalue = 200000 if settings.bot_name == "dragonballdex" else 14000
         for countryball in countryballs:
+            battlespecial = await countryball.special
+            battlespecial = (f"{battlespecial}")
+            if battlespecial == "Shiny":
+                buff = 50000 if settings.bot_name == "dragonballdex" else 5000
+            elif battlespecial == "Mythical":
+                buff = 100000 if settings.bot_name == "dragonballdex" else 12000
+            elif battlespecial == "Boss" or battlespecial == "Collector":
+                buff = 60000 if settings.bot_name == "dragonballdex" else 6000
+            elif battlespecial == "Diamond":
+                buff = 80000 if settings.bot_name == "dragonballdex" else 8000
+            elif battlespecial == "Emerald":
+                buff = 120000 if settings.bot_name == "dragonballdex" else 14000
+            elif battlespecial in highevent:
+                buff = 25000 if settings.bot_name == "dragonballdex" else 3000
+            elif battlespecial in lowevent:
+                buff = 15000 if settings.bot_name == "dragonballdex" else 2000
+            elif battlespecial == "Gold" or battlespecial == "Titanium White":
+                buff = 1500
+            elif battlespecial == "Black":
+                buff = 1250
+            elif battlespecial == None or battlespecial == "None":
+                buff = 0
+            else:
+                buff = 1000
+            if countryball.health < 0:
+                countryballhealth = 0
+            elif countryball.health > maxvalue:
+                countryballhealth = maxvalue
+            else:
+                countryballhealth = countryball.health
+            if countryball.attack < 0:
+                countryballattack = 0
+            elif countryball.attack > maxvalue:
+                countryballattack = maxvalue
+            else:
+                countryballattack = countryball.attack
             ball = BattleBall(
-                countryball.countryball.country,
+                countryball.description(short=True, include_emoji=False, bot=self.bot),
                 interaction.user.name,
-                countryball.health,
-                countryball.attack,
+                (countryballhealth + buff),
+                (countryballattack + buff),
                 self.bot.get_emoji(countryball.countryball.emoji_id),
             )
 
@@ -463,7 +533,7 @@ class Battle(commands.GroupCog):
 
     @app_commands.command()
     async def add(
-        self, interaction: discord.Interaction, countryball: BallInstanceTransform
+        self, interaction: discord.Interaction, countryball: BallInstanceTransform, special: SpecialEnabledTransform | None = None,
     ):
         """
         Adds a countryball to a battle.
@@ -484,14 +554,17 @@ class Battle(commands.GroupCog):
         attack = "{:+}".format(countryball.attack_bonus)
         health = "{:+}".format(countryball.health_bonus)
 
-        await interaction.response.send_message(
-            f"Added `#{countryball.id} {countryball.countryball.country} ({attack}%/{health}%)`!",
-            ephemeral=True,
-        )
+        try:
+            await interaction.response.send_message(
+                f"Added `{countryball.description(short=True, include_emoji=False, bot=self.bot)} ({attack}%/{health}%)`!",
+                ephemeral=True,
+            )
+        except:
+            return
 
     @app_commands.command()
     async def remove(
-        self, interaction: discord.Interaction, countryball: BallInstanceTransform
+        self, interaction: discord.Interaction, countryball: BallInstanceTransform, special: SpecialEnabledTransform | None = None,
     ):
         """
         Removes a countryball from battle.
@@ -511,10 +584,13 @@ class Battle(commands.GroupCog):
         attack = "{:+}".format(countryball.attack_bonus)
         health = "{:+}".format(countryball.health_bonus)
 
-        await interaction.response.send_message(
-            f"Removed `#{countryball.id} {countryball.countryball.country} ({attack}%/{health}%)`!",
-            ephemeral=True,
-        )
+        try:
+            await interaction.response.send_message(
+                f"Removed `{countryball.description(short=True, include_emoji=False, bot=self.bot)} ({attack}%/{health}%)`!",
+                ephemeral=True,
+            )
+        except:
+            return
     
     @bulk.command(name="add")
     async def bulk_add(
@@ -528,18 +604,22 @@ class Battle(commands.GroupCog):
         countryball: Ball
             The countryball you want to add.
         """
-        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
-        balls = await countryball.ballinstances.filter(player=player)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+            balls = await countryball.ballinstances.filter(player=player)
 
-        count = 0
-        async for dupe in self.add_balls(interaction, balls):
-            if not dupe:
-                count += 1
+            count = 0
+            async for dupe in self.add_balls(interaction, balls):
+                if not dupe:
+                    count += 1
 
-        await interaction.response.send_message(
-            f'Added {count} {countryball.country}{"s" if count != 1 else ""}!',
-            ephemeral=True,
-        )
+            await interaction.followup.send(
+                f'Added {count} {countryball.country}{"s" if count != 1 else ""}!',
+                ephemeral=True,
+            )
+        except:
+            await interaction.followup.send(f"You aren't a part of a battle!",ephemeral=True)
 
     @bulk.command(name="all")
     async def bulk_all(
@@ -548,18 +628,22 @@ class Battle(commands.GroupCog):
         """
         Adds all your countryballs to a battle.
         """
-        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
-        balls = await BallInstance.filter(player=player)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+            balls = await BallInstance.filter(player=player)
 
-        count = 0
-        async for dupe in self.add_balls(interaction, balls):
-            if not dupe:
-                count += 1
+            count = 0
+            async for dupe in self.add_balls(interaction, balls):
+                if not dupe:
+                    count += 1
 
-        name = settings.plural_collectible_name if count != 1 else settings.collectible_name
+            name = settings.plural_collectible_name if count != 1 else settings.collectible_name
 
-        await interaction.response.send_message(f"Added {count} {name}!", ephemeral=True)
-
+            await interaction.followup.send(f"Added {count} {name}!", ephemeral=True)
+        except:
+            await interaction.followup.send(f"You aren't a part of a battle!",ephemeral=True)
+        
     @bulk.command(name="clear")
     async def bulk_remove(
         self, interaction: discord.Interaction
@@ -567,17 +651,20 @@ class Battle(commands.GroupCog):
         """
         Removes all your countryballs from a battle.
         """
-        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
-        balls = await BallInstance.filter(player=player)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+            balls = await BallInstance.filter(player=player)
 
-        count = 0
-        async for not_in_battle in self.remove_balls(interaction, balls):
-            if not not_in_battle:
-                count += 1
+            count = 0
+            async for not_in_battle in self.remove_balls(interaction, balls):
+                if not not_in_battle:
+                    count += 1
 
-        name = settings.plural_collectible_name if count != 1 else settings.collectible_name
-
-        await interaction.response.send_message(f"Removed {count} {name}!", ephemeral=True)
+            name = settings.plural_collectible_name if count != 1 else settings.collectible_name
+            await interaction.followup.send(f"Removed {count} {name}!", ephemeral=True)
+        except:
+            await interaction.followup.send(f"You aren't a part of a battle!",ephemeral=True)
 
     @bulk.command(name="remove")
     async def bulk_remove(
@@ -591,15 +678,18 @@ class Battle(commands.GroupCog):
         countryball: Ball
             The countryball you want to remove.
         """
-        player, _ = await Player.get_or_create(discord_id=interaction.user.id)
-        balls = await countryball.ballinstances.filter(player=player)
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            player, _ = await Player.get_or_create(discord_id=interaction.user.id)
+            balls = await countryball.ballinstances.filter(player=player)
 
-        count = 0
-        async for not_in_battle in self.remove_balls(interaction, balls):
-            if not not_in_battle:
-                count += 1
-
-        await interaction.response.send_message(
-            f'Removed {count} {countryball.country}{"s" if count != 1 else ""}!',
-            ephemeral=True,
-        )
+            count = 0
+            async for not_in_battle in self.remove_balls(interaction, balls):
+                if not not_in_battle:
+                    count += 1
+            await interaction.followup.send(
+                f'Removed {count} {countryball.country}{"s" if count != 1 else ""}!',
+                ephemeral=True,
+            )
+        except:
+            await interaction.followup.send(f"You aren't a part of a battle!",ephemeral=True)

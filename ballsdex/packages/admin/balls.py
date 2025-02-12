@@ -10,11 +10,7 @@ from discord.utils import format_dt
 from tortoise.exceptions import BaseORMException, DoesNotExist
 
 from ballsdex.core.bot import BallsDexBot
-<<<<<<< HEAD
 from ballsdex.core.models import Ball, BallInstance, Player, Trade, TradeObject, Regime, Special
-=======
-from ballsdex.core.models import Ball, BallInstance, Player, Special, Trade, TradeObject
->>>>>>> 7ddb6d4156675ad1cca883fe832aa49445274da1
 from ballsdex.core.utils.buttons import ConfirmChoiceView
 from ballsdex.core.utils.logging import log_action
 from ballsdex.core.utils.transformers import (
@@ -31,16 +27,16 @@ FILENAME_RE = re.compile(r"^(.+)(\.\S+)$")
 
 
 async def save_file(attachment: discord.Attachment) -> Path:
-    path = Path(f"./admin_panel/media/{attachment.filename}")
+    path = Path(f"./static/uploads/{attachment.filename}")
     match = FILENAME_RE.match(attachment.filename)
     if not match:
         raise TypeError("The file you uploaded lacks an extension.")
     i = 1
     while path.exists():
-        path = Path(f"./admin_panel/media/{match.group(1)}-{i}{match.group(2)}")
+        path = Path(f"./static/uploads/{match.group(1)}-{i}{match.group(2)}")
         i = i + 1
     await attachment.save(path)
-    return path.relative_to("./admin_panel/media/")
+    return path
 
 
 class Balls(app_commands.Group):
@@ -82,23 +78,13 @@ class Balls(app_commands.Group):
         try:
             for i in range(n):
                 if not countryball:
-<<<<<<< HEAD
-                    if regime:
-                        ball = CountryBall(await Ball.filter(regime=regime).first())
-                    else:
-                        ball = await CountryBall.get_random()
-                    ball.special = special
-                    ball.atk_bonus = atk_bonus
-                    ball.hp_bonus = hp_bonus
-=======
                     ball = await CountryBall.get_random()
                 else:
                     ball = CountryBall(countryball)
-                ball.special = special
                 ball.regime = regime
+                ball.special = special
                 ball.atk_bonus = atk_bonus
                 ball.hp_bonus = hp_bonus
->>>>>>> 7ddb6d4156675ad1cca883fe832aa49445274da1
                 result = await ball.spawn(channel)
                 if not result:
                     task.cancel()
@@ -128,21 +114,19 @@ class Balls(app_commands.Group):
         regime: RegimeTransform | None = None,
         channel: discord.TextChannel | None = None,
         n: app_commands.Range[int, 1, 100] = 1,
-<<<<<<< HEAD
         special: Special | None = None,
-=======
-        special: SpecialTransform | None = None,
->>>>>>> 7ddb6d4156675ad1cca883fe832aa49445274da1
         atk_bonus: int | None = None,
         hp_bonus: int | None = None,
     ):
         """
-        Force spawn a random or specified countryball.
+        Force spawns a random or specified countryball, optionally from a specified regime with optional special status.
 
         Parameters
         ----------
         countryball: Ball | None
                 The countryball you want to spawn. Random according to rarities if not specified.
+        regime: Regime | None
+            The regime you want the spawned instance to be.
         channel: discord.TextChannel | None
             The channel you want to spawn the countryball in. Current channel if not specified.
         n: int
@@ -155,52 +139,22 @@ class Balls(app_commands.Group):
         hp_bonus: int | None
             Force the countryball to have a specific health bonus when caught.
         """
-        # the transformer triggered a response, meaning user tried an incorrect input
         if interaction.response.is_done():
             return
 
         if n > 1:
             await self._spawn_bomb(
-                interaction, countryball, channel or interaction.channel, n  # type: ignore
+                interaction, countryball, regime, channel or interaction.channel, n  # type: ignore
             )
             await log_action(
-                f"{interaction.user} spawned {settings.collectible_name}"
-                f" {countryball or 'random'} {n} times in {channel or interaction.channel}.",
-                interaction.client,
+                f"{interaction.user} spawned {settings.collectible_name}",
+                f"{countryball or 'random'} {n} times in {channel or interaction.channel}",
+                interaction.client
             )
-
             return
 
         await interaction.response.defer(ephemeral=True, thinking=True)
         if not countryball:
-<<<<<<< HEAD
-            if regime:
-                ball = CountryBall(await Ball.filter(regime=regime).first())
-            else:
-                ball = await CountryBall.get_random()
-            ball.special = special
-            ball.atk_bonus = atk_bonus
-            ball.hp_bonus = hp_bonus
-            result = await ball.spawn(channel or interaction.channel)
-
-        if result:
-            await interaction.followup.send(
-                f"{settings.collectible_name.title()} spawned.", ephemeral=True
-            )
-            special_attrs = []
-            if special is not None:
-                special_attrs.append(f"special={special.name}")
-            if atk_bonus is not None:
-                special_attrs.append(f"atk={atk_bonus}")
-            if hp_bonus is not None:
-                special_attrs.append(f"hp={hp_bonus}")
-            await log_action(
-                f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
-                f"in {channel or interaction.channel}"
-                f"{f" ({", ".join(special_attrs)})" if special_attrs else ""}.",
-                interaction.client,
-            )
-=======
             ball = await CountryBall.get_random()
         else:
             ball = CountryBall(countryball)
@@ -209,7 +163,6 @@ class Balls(app_commands.Group):
         ball.atk_bonus = atk_bonus
         ball.hp_bonus = hp_bonus
         result = await ball.spawn(channel or interaction.channel)  # type: ignore
->>>>>>> 7ddb6d4156675ad1cca883fe832aa49445274da1
 
         if result:
             await interaction.followup.send(
@@ -228,6 +181,7 @@ class Balls(app_commands.Group):
                 f"{f" ({", ".join(special_attrs)})" if special_attrs else ""}.",
                 interaction.client,
             )
+
 
     @app_commands.command()
     @app_commands.checks.has_any_role(*settings.root_role_ids)
@@ -374,6 +328,55 @@ class Balls(app_commands.Group):
             f"{settings.collectible_name.title()} {countryball_id} deleted.", ephemeral=True
         )
         await log_action(f"{interaction.user} deleted {ball}({ball.pk}).", interaction.client)
+
+    @app_commands.command(name="transfer")
+    @app_commands.checks.has_any_role(*settings.root_role_ids)
+    async def balls_transfer(
+        self,
+        interaction: discord.Interaction[BallsDexBot],
+        countryball_id: str,
+        user: discord.User,
+    ):
+        """
+        Transfer a countryball to another user.
+
+        Parameters
+        ----------
+        countryball_id: str
+            The ID of the countryball you want to transfer.
+        user: discord.User
+            The user you want to transfer the countryball to.
+        """
+        try:
+            ballIdConverted = int(countryball_id, 16)
+        except ValueError:
+            await interaction.response.send_message(
+                f"The {settings.collectible_name} ID you gave is not valid.", ephemeral=True
+            )
+            return
+        try:
+            ball = await BallInstance.get(id=ballIdConverted).prefetch_related("player")
+            original_player = ball.player
+        except DoesNotExist:
+            await interaction.response.send_message(
+                f"The {settings.collectible_name} ID you gave does not exist.", ephemeral=True
+            )
+            return
+        player, _ = await Player.get_or_create(discord_id=user.id)
+        ball.player = player
+        await ball.save()
+
+        trade = await Trade.create(player1=original_player, player2=player)
+        await TradeObject.create(trade=trade, ballinstance=ball, player=original_player)
+        await interaction.response.send_message(
+            f"Transfered {ball}({ball.pk}) from {original_player} to {user}.",
+            ephemeral=True,
+        )
+        await log_action(
+            f"{interaction.user} transferred {ball}({ball.pk}) from {original_player} to {user}.",
+            interaction.client,
+        )
+
     @app_commands.command(name="bulk_transfer")
     @app_commands.checks.has_any_role(*settings.root_role_ids)
     async def balls_bulk_transfer(
@@ -424,54 +427,8 @@ class Balls(app_commands.Group):
             f"{interaction.user} bulk-transferred all countryballs from {donor} to {receiver}.",
             interaction.client,
         )
-        
-    @app_commands.command(name="transfer")
-    @app_commands.checks.has_any_role(*settings.root_role_ids)
-    async def balls_transfer(
-        self,
-        interaction: discord.Interaction[BallsDexBot],
-        countryball_id: str,
-        user: discord.User,
-    ):
-        """
-        Transfer a countryball to another user.
 
-        Parameters
-        ----------
-        countryball_id: str
-            The ID of the countryball you want to transfer.
-        user: discord.User
-            The user you want to transfer the countryball to.
-        """
-        try:
-            ballIdConverted = int(countryball_id, 16)
-        except ValueError:
-            await interaction.response.send_message(
-                f"The {settings.collectible_name} ID you gave is not valid.", ephemeral=True
-            )
-            return
-        try:
-            ball = await BallInstance.get(id=ballIdConverted).prefetch_related("player")
-            original_player = ball.player
-        except DoesNotExist:
-            await interaction.response.send_message(
-                f"The {settings.collectible_name} ID you gave does not exist.", ephemeral=True
-            )
-            return
-        player, _ = await Player.get_or_create(discord_id=user.id)
-        ball.player = player
-        await ball.save()
 
-        trade = await Trade.create(player1=original_player, player2=player)
-        await TradeObject.create(trade=trade, ballinstance=ball, player=original_player)
-        await interaction.response.send_message(
-            f"Transfered {ball}({ball.pk}) from {original_player} to {user}.",
-            ephemeral=True,
-        )
-        await log_action(
-            f"{interaction.user} transferred {ball}({ball.pk}) from {original_player} to {user}.",
-            interaction.client,
-        )
 
     @app_commands.command(name="reset")
     @app_commands.checks.has_any_role(*settings.root_role_ids)

@@ -8,6 +8,8 @@ import discord
 from discord import app_commands
 from discord.utils import format_dt
 from tortoise.exceptions import BaseORMException, DoesNotExist
+from tortoise.expressions import Q
+from random import randint
 
 from ballsdex.core.bot import BallsDexBot
 from ballsdex.core.models import Ball, BallInstance, Player, Special, Trade, TradeObject
@@ -215,6 +217,144 @@ class Balls(app_commands.Group):
                 f"{f" ({", ".join(special_attrs)})" if special_attrs else ""}.",
                 interaction.client,
             )
+    
+    @app_commands.command()
+    @app_commands.checks.has_any_role(*settings.root_role_ids)
+    async def wheel(
+        self,
+        interaction: discord.Interaction,
+        countryball: BallTransform | None = None,
+        regime: RegimeTransform | None = None,
+        economy: EconomyTransform | None = None,
+        min_attack: int | None = None,
+        max_attack: int | None = None,
+        min_health: int | None = None,
+        max_health: int | None = None,
+        special: SpecialTransform | None = None,
+        rarity_min: float | None = None,
+        rarity_max: float | None = None,
+        tradeable_only: bool = False,
+        atk_bonus: int | None = None,
+        hp_bonus: int | None = None,
+    ):
+        """
+        Spin the wheel to get a random ball with optional filters.
+
+        Parameters
+        ----------
+        countryball: Ball | None
+            The specific countryball you want to get. Random according to rarities if not specified.
+        regime: Regime | None
+            The regime from which to get a countryball. Ignored if a countryball is specified.
+        economy: Economy | None
+            The economy from which to get a countryball. Ignored if a countryball is specified.
+        min_attack: Minimum attack stat
+            Maximum attack stat
+        min_health: Minimum health stat
+            Maximum health stat
+        special: Special | None
+            Force the countryball to have a special attribute.
+        tradeable_only: Only show tradeable balls
+            Whether to only show tradeable balls.
+        atk_bonus: int | None
+            Force a specific attack bonus
+        hp_bonus: int | None
+            Force a specific health bonus
+        """
+        await interaction.response.defer(thinking=True)
+        
+        # If specific ball is provided, use that
+        if countryball:
+            ball = countryball
+        else:
+            # Build query with filters
+            query = Q(enabled=True)
+            
+            if regime:
+                query &= Q(regime=regime)
+            
+            if economy:
+                query &= Q(economy=economy)
+            
+            if min_attack is not None:
+                query &= Q(attack__gte=min_attack)
+            
+            if max_attack is not None:
+                query &= Q(attack__lte=max_attack)
+            
+            if min_health is not None:
+                randint (-20, 20)
+            
+            if max_health is not None:
+                randint (-20, 20)
+            
+            if tradeable_only:
+                query &= Q(tradeable=True)
+            
+            # Get a random ball matching our filters
+            try:
+                balls = await Ball.filter(query).all()
+                if balls:
+                    ball = random.choice(balls)
+                else:
+                    return await interaction.followup.send("No balls found matching these filters.")
+                if not ball:
+                    return await interaction.followup.send("No balls found matching these filters.")
+            except Exception as e:
+                return await interaction.followup.send(f"Error retrieving ball: {e}")
+        
+        # Set special event if specified
+        special_event = None
+        if special:
+            special_event = special
+        # If special not specified but we want a random special
+        elif random.random() < 0:  # 10% chance for random special
+            try:
+                now = timezone.now()
+                special_event = await Special.filter(
+                    Q(Q(start_date__lte=now) | Q(start_date__isnull=True)) &
+                    Q(Q(end_date__gte=now) | Q(end_date__isnull=True)) &
+                    Q(hidden=False)
+                ).order_by("?").first()
+            except Exception:
+                pass
+        
+        # Generate random stat bonuses if not specified
+        attack_bonus = atk_bonus if atk_bonus is not None else random.randint(-20, 20)
+        health_bonus = hp_bonus if hp_bonus is not None else random.randint(-20, 20)
+        
+        # Format output strings
+        plusatk = "+" if attack_bonus >= 0 else ""
+        plushp = "+" if health_bonus >= 0 else ""
+        
+        # Build regime and economy info
+        regime_info = f"Regime: {ball.cached_regime.name}" if ball.cached_regime else ""
+        economy_info = f"Economy: {ball.cached_economy.name}" if ball.cached_economy else ""
+        system_info = f"{regime_info} | {economy_info}" if regime_info and economy_info else regime_info or economy_info
+        
+        # Build capacity info
+        capacity_info = f"**{ball.capacity_name}**: {ball.capacity_description}"
+        
+        # Special card info
+        special_info = f"**Special Event:** {special_event.name}" if special_event else ""
+        
+        # Format the final message
+        message = (
+            f"# {ball.country}\n"
+            f"**Stats:** `{plusatk}{attack_bonus}% ATK/{plushp}{health_bonus}% HP`\n"
+            f"**Base Stats:** ATK: {ball.attack} | HP: {ball.health}\n"
+            f"{system_info}\n"
+            f"{special_info}"
+        )
+        
+        try:
+            emoji = interaction.client.get_emoji(ball.emoji_id)
+            if emoji:
+                message = f"{emoji} {message}"
+        except:
+            pass
+            
+        await interaction.followup.send(message)
 
     @app_commands.command()
     @app_commands.checks.has_any_role(*settings.root_role_ids)

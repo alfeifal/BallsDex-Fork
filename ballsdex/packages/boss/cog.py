@@ -6,6 +6,9 @@ import asyncio
 import logging
 import re
 
+intents = discord.Intents.default()
+intents.members = True
+
 from discord import app_commands
 from discord.ext import commands
 from typing import TYPE_CHECKING, Optional, cast
@@ -77,7 +80,7 @@ class JoinButton(View):
         self.join_button = Button(label="Join Boss Fight!", style=discord.ButtonStyle.primary, custom_id="join_boss")
         self.join_button.callback = self.button_callback
         self.add_item(self.join_button)
-
+    
     async def button_callback(self, interaction: Interaction):
         if not self.boss_cog.boss_enabled:
             await interaction.response.send_message("Boss is disabled", ephemeral=True)
@@ -98,7 +101,7 @@ class JoinButton(View):
         self.boss_cog.bossHP = new_hp
         
         await interaction.response.send_message("You have joined the Boss Battle!", ephemeral=True) 
-
+        
     async def on_timeout(self):
         # Remove button once the time ends
         for item in self.children:
@@ -176,7 +179,7 @@ class Boss(commands.GroupCog):
             )
 
             # Dar tiempo para selecciones manuales
-            await asyncio.sleep(60)
+            await asyncio.sleep(20)
 
             # Procesar selecciones automáticas para usuarios que no hayan seleccionado
             snapshotusers = self.users.copy()
@@ -357,7 +360,7 @@ class Boss(commands.GroupCog):
 
     async def end_round_timeout(self, channel: discord.TextChannel):
         """Modified end_round_timeout to auto-process selections"""
-        await asyncio.sleep(60)  # Wait for 60 seconds just for testing and cuz im too lazy to wait for a minute, set how long you want your 
+        await asyncio.sleep(20)  # Wait for 20 seconds just for testing and cuz im too lazy to wait for a minute, set how long you want your 
         # rounds to last for here 
         
         if not self.picking:  # Round was already ended manually
@@ -614,7 +617,7 @@ class Boss(commands.GroupCog):
         )
         
         message = await interaction.channel.send(
-            f"<@1109086033024405536> A boss battle has begun <a:Crown:1331246693546594372>", # change your starting message here
+            f"<@&1308512664124788837> A boss battle has begun <a:Crown:1331246693546594372>", # change your starting message here
             file=file,
             view=view
         )
@@ -828,7 +831,7 @@ class Boss(commands.GroupCog):
             await interaction.followup.send(
                 f"Boss successfully concluded", ephemeral=True
             )
-            await interaction.channel.send(f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\n💀 ᴛʜᴇ ʙᴏꜱꜱ ᴘʀᴏᴠᴇᴅ ᴜɴꜱᴛᴏᴘᴘᴀʙʟᴇ, ᴄʀᴜꜱʜɪɴɢ ᴀʟʟ ᴡʜᴏ ᴅᴀʀᴇᴅ ᴛᴏ ꜰᴀᴄᴇ ɪᴛ ᴀɴᴅ ꜱᴇᴄᴜʀɪɴɢ ɪᴛꜱ ꜰɪᴇʀᴄᴇ ᴅᴏᴍɪɴɪᴏɴ. 💀")
+            await interaction.channel.send(f"# Boss has concluded \n💀 ᴛʜᴇ ʙᴏꜱꜱ ᴘʀᴏᴠᴇᴅ ᴜɴꜱᴛᴏᴘᴘᴀʙʟᴇ, ᴄʀᴜꜱʜɪɴɢ ᴀʟʟ ᴡʜᴏ ᴅᴀʀᴇᴅ ᴛᴏ ꜰᴀᴄᴇ ɪᴛ ᴀɴᴅ ꜱᴇᴄᴜʀɪɴɢ ɪᴛꜱ ꜰɪᴇʀᴄᴇ ᴅᴏᴍɪɴɪᴏɴ. 💀")
             with open("totalstats.txt", "w") as file:
                 file.write(f"{total}{total2}")
             with open("totalstats.txt", "rb") as file:
@@ -863,7 +866,7 @@ class Boss(commands.GroupCog):
                 f"Boss successfully concluded", ephemeral=True
             )
             await interaction.channel.send(
-                f"# <a:Crown:1331246693546594372> Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\n👑 <@{bosswinner}>  ꜱᴛᴏᴏᴅ ᴛᴀʟʟ ᴀɢᴀɪɴꜱᴛ ᴏᴅᴅꜱ ᴀɴᴅ ᴄʟᴀɪᴍᴇᴅ ᴠɪᴄᴛᴏʀʏ ꜰʀᴏᴍ ᴀ ᴍɪɢʜᴛʏ ʙᴏꜱꜱ, ᴡʀɪᴛɪɴɢ ᴛʜᴇɪʀ ɴᴀᴍᴇ ɪɴ ʟᴇɢᴇɴᴅꜱ. 👑\n\n"
+                f"# <a:Crown:1331246693546594372> Boss has concluded \n👑 <@{bosswinner}>  ꜱᴛᴏᴏᴅ ᴛᴀʟʟ ᴀɢᴀɪɴꜱᴛ ᴏᴅᴅꜱ ᴀɴᴅ ᴄʟᴀɪᴍᴇᴅ ᴠɪᴄᴛᴏʀʏ ꜰʀᴏᴍ ᴀ ᴍɪɢʜᴛʏ ʙᴏꜱꜱ, ᴡʀɪᴛɪɴɢ ᴛʜᴇɪʀ ɴᴀᴍᴇ ɪɴ ʟᴇɢᴇɴᴅꜱ. 👑\n\n"
                 f"`Boss` `{self.bossball}` {settings.collectible_name} was successfully given.\n"
             )
             bosswinner_user = await self.bot.fetch_user(int(bosswinner))
@@ -878,7 +881,7 @@ class Boss(commands.GroupCog):
             await interaction.followup.send(
                 f"Boss successfully concluded", ephemeral=True
             )
-            await interaction.channel.send(f"# Boss has concluded {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!")
+            await interaction.channel.send(f"# Boss has concluded \nThe boss has been defeated!")
         with open("totalstats.txt", "w") as file:
             file.write(f"{total}{total2}")
         with open("totalstats.txt", "rb") as file:
@@ -905,49 +908,87 @@ class Boss(commands.GroupCog):
         self,
         interaction: discord.Interaction,
         user: discord.User | None = None,
-        user_id : str | None = None,
+        user_id: str | None = None,
+        all: bool | None = False,
         ):
         """
-        Join a user to the boss battle.
+        Join a user to the boss battle. Use 'all' to add every member in the server except bots.
         """
         await interaction.response.defer(ephemeral=True, thinking=True)
-        if (user and user_id) or (not user and not user_id):
-            await interaction.followup.send(
-                "You must provide either `user` or `user_id`.", ephemeral=True
-            )
-            return
-
-        if not user:
+        
+        # Handle the 'all' option to add all members
+        if all:
+            if not self.boss_enabled:
+                return await interaction.followup.send("Boss is disabled", ephemeral=True)
+                
+            if not interaction.guild:
+                return await interaction.followup.send("This command must be used in a server.", ephemeral=True)
+            
             try:
-                user = await self.bot.fetch_user(int(user_id))  # type: ignore
-            except ValueError:
+                members_added = 0
+                processed_ids = set()  # Para evitar duplicados
+                
+                # 1. Primero, intentamos con los miembros en caché
+                for member in interaction.guild.members:
+                    if not member.bot and member.id not in self.users:
+                        processed_ids.add(member.id)
+                        if member.id in self.disqualified:
+                            self.disqualified.remove(member.id)
+                        self.users.append(member.id)
+                        members_added += 1
+                
+                # 2. Luego, revisamos los mensajes recientes en varios canales
+                for channel_id in interaction.guild.text_channels:
+                    try:
+                        channel = interaction.guild.get_channel(channel_id.id)
+                        if channel and channel.permissions_for(interaction.guild.me).read_message_history:
+                            async for message in channel.history(limit=200):
+                                if message.author.id not in processed_ids and not message.author.bot and message.author.id not in self.users:
+                                    processed_ids.add(message.author.id)
+                                    if message.author.id in self.disqualified:
+                                        self.disqualified.remove(message.author.id)
+                                    self.users.append(message.author.id)
+                                    members_added += 1
+                    except Exception:
+                        # Ignoramos errores en canales individuales
+                        continue
+                
+                # 3. Finalmente, si tienes roles en el servidor, puedes usar miembros con roles específicos
+                try:
+                    for role in interaction.guild.roles:
+                        if role.name != "@everyone":  # Ignoramos el rol @everyone
+                            for member in role.members:
+                                if member.id not in processed_ids and not member.bot and member.id not in self.users:
+                                    processed_ids.add(member.id)
+                                    if member.id in self.disqualified:
+                                        self.disqualified.remove(member.id)
+                                    self.users.append(member.id)
+                                    members_added += 1
+                except Exception:
+                    # Ignoramos errores al procesar roles
+                    pass
+                
+                # Si no se añadió ningún miembro, informar al usuario
+                if members_added == 0:
+                    return await interaction.followup.send(
+                        "No se pudo añadir ningún miembro. Intenta usar el comando con usuarios específicos.", 
+                        ephemeral=True
+                    )
+                
+                # Recalculate boss HP based on new player count
+                new_hp = Boss.calculate_boss_hp(self.bossball.rarity, len(self.users))
+                self.bossHP = new_hp
+                    
                 await interaction.followup.send(
-                    "The user ID you gave is not valid.", ephemeral=True
+                    f"Added {members_added} server members to the boss battle. Boss HP adjusted to {new_hp}.", 
+                    ephemeral=True
+                )
+                
+                await log_action(
+                    f"{members_added} server members have been added to the `{self.bossball}` Boss Battle. [hackjoin all by {interaction.user}]",
+                    self.bot,
                 )
                 return
-            except discord.NotFound:
-                await interaction.followup.send(
-                    "The given user ID could not be found.", ephemeral=True
-                )
-                return
-        else:
-            user_id = user.id
-
-        if not self.boss_enabled:
-            return await interaction.followup.send("Boss is disabled", ephemeral=True)
-        if [int(user_id), self.round] in self.usersinround:
-            return await interaction.followup.send("This user is already in the boss battle.", ephemeral=True)
-        if int(user_id) in self.users:
-            return await interaction.followup.send(
-                "This user is already in the boss battle.", ephemeral=True
-            )
-        self.users.append(user_id)
-        if user_id in self.disqualified:
-            self.disqualified.remove(user_id)
-        await interaction.followup.send(
-            f"{user} has been hackjoined into the Boss Battle.", ephemeral=True
-        )
-        await log_action(
-            f"{user} has joined the `{self.bossball}` Boss Battle. [hackjoin by {await self.bot.fetch_user(int(interaction.user.id))}]",
-            self.bot,
-        )
+            except Exception as e:
+                log.error(f"Error adding all members: {e}")
+                return await interaction.followup.send(f"Error adding all members: {e}", ephemeral=True)

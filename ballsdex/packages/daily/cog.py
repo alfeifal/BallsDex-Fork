@@ -1,11 +1,11 @@
 import datetime
 import logging
 import random
+import asyncio
 from typing import List, Optional, Tuple
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, View
 from tortoise.expressions import Q
 
 from ballsdex.core.models import (
@@ -26,59 +26,51 @@ from ballsdex.core.utils.logging import log_action
 
 log = logging.getLogger("ballsdex.packages.daily.cog")
 
-class PackOpeningView(View):
+class RevealStage:
+    STATS = 1
+    ECONOMY = 2
+    FULL = 3
+
+class AutomatedPackOpening:
     def __init__(self, bot: commands.Bot, instances: List[Tuple[BallInstance, CountryBall, Optional[Special]]]):
-        super().__init__(timeout=180)
         self.bot = bot
         self.instances = instances
         self.current_index = 0
+        self.current_stage = RevealStage.STATS
         self.revealed = [False] * len(instances)
-        self.update_buttons()
+        self.message: Optional[discord.Message] = None
 
-    def update_buttons(self):
-        self.clear_items()
-        if not all(self.revealed):
-            reveal_button = Button(
-                label="Reveal Next Ball", 
-                style=discord.ButtonStyle.primary,
-                custom_id="reveal"
-            )
-            reveal_button.callback = self.reveal_ball
-            self.add_item(reveal_button)
-
-            reveal_all_button = Button(
-                label="Reveal All", 
-                style=discord.ButtonStyle.success,
-                custom_id="reveal_all"
-            )
-            reveal_all_button.callback = self.reveal_all
-            self.add_item(reveal_all_button)
-
-    async def reveal_ball(self, interaction: discord.Interaction):
-        if self.current_index >= len(self.instances):
-            return
-
-        self.revealed[self.current_index] = True
+    async def start_reveal(self, interaction: discord.Interaction):
+        """Initiate the automated pack opening sequence with staged reveals"""
         embed = await self.create_pack_embed()
-        self.current_index += 1
-
-        if self.current_index >= len(self.instances):
-            self.clear_items()
-            embed.set_footer(text="Pack opening complete! 🎉")
-        else:
-            self.update_buttons()
-
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    async def reveal_all(self, interaction: discord.Interaction):
-        self.revealed = [True] * len(self.instances)
-        self.current_index = len(self.instances)
+        self.message = await interaction.followup.send(embed=embed)
         
-        embed = await self.create_pack_embed()
-        embed.set_footer(text="Pack opening complete! 🎉")
-        
-        self.clear_items()
-        await interaction.response.edit_message(embed=embed, view=self)
+        # Reveal balls one by one with stages
+        for i in range(len(self.instances)):
+            self.current_index = i
+            
+            # Stage 1: Show stats
+            self.current_stage = RevealStage.STATS
+            await asyncio.sleep(1.5)
+            embed = await self.create_pack_embed()
+            await self.message.edit(embed=embed)
+            
+            # Stage 2: Show economy
+            self.current_stage = RevealStage.ECONOMY
+            await asyncio.sleep(1.5)
+            embed = await self.create_pack_embed()
+            await self.message.edit(embed=embed)
+            
+            # Stage 3: Full reveal
+            self.current_stage = RevealStage.FULL
+            self.revealed[i] = True
+            await asyncio.sleep(1.5)
+            embed = await self.create_pack_embed()
+            
+            if i == len(self.instances) - 1:
+                embed.set_footer(text="Pack opening complete! 🎉")
+            
+            await self.message.edit(embed=embed)
 
     async def create_pack_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -91,16 +83,19 @@ class PackOpeningView(View):
         total_health = 0
 
         for i, (revealed, (instance, countryball, special)) in enumerate(zip(self.revealed, self.instances)):
-            if revealed:
+            if i < self.current_index or revealed:
+                # Fully revealed ball
                 ball_model = balls.get(instance.ball_id, instance.ball)
-                emoji = f"{self.bot.get_emoji(ball_model.emoji_id)}"  # Formateo directo del emoji
+                emoji = f"{self.bot.get_emoji(ball_model.emoji_id)}"
                 special_text = f" [**{special.name}**]" if special else ""
         
                 field_name = f"Ball #{i+1}: {emoji} {ball_model.country}{special_text}"
                 field_value = (
                     f"`ATK: {instance.attack_bonus:+d}% ({instance.attack})`\n"
-                    f"`HP: {instance.health_bonus:+d}% ({instance.health})`"
-            )
+                    f"`HP: {instance.health_bonus:+d}% ({instance.health})`\n"
+                    f"Regime: {ball_model.cached_regime.name}\n"
+                    f"Economy: {ball_model.cached_economy.name if ball_model.cached_economy else 'None'}"
+                )
                 
                 if special and special.catch_phrase:
                     field_value += f"\n*{special.catch_phrase}*"
@@ -109,10 +104,29 @@ class PackOpeningView(View):
                 total_health += instance.health
                 
                 embed.add_field(name=field_name, value=field_value, inline=False)
+            
+            elif i == self.current_index:
+                # Current ball being revealed
+                ball_model = balls.get(instance.ball_id, instance.ball)
+                field_name = f"Ball #{i+1}"
+                
+                if self.current_stage >= RevealStage.STATS:
+                    field_name = f"Ball #{i+1}: ❓"
+                    field_value = (
+                        f"`ATK: {instance.attack_bonus:+d}% ({instance.attack})`\n"
+                        f"`HP: {instance.health_bonus:+d}% ({instance.health})`"
+                    )
+                    
+                if self.current_stage >= RevealStage.ECONOMY:
+                    field_value += f"\nRegime: {ball_model.cached_regime.name}\n"
+                    field_value += f"Economy: {ball_model.cached_economy.name if ball_model.cached_economy else 'None'}"
+                    
+                embed.add_field(name=field_name, value=field_value, inline=False)
             else:
+                # Not yet revealed
                 embed.add_field(
                     name=f"Ball #{i+1}", 
-                    value="❓ *Click 'Reveal Next Ball' to see what you got!*",
+                    value="❓ *Revealing soon...*",
                     inline=False
                 )
 
@@ -122,6 +136,17 @@ class PackOpeningView(View):
                 value=f"Total ATK: {total_attack}\nTotal HP: {total_health}",
                 inline=False
             )
+
+        # Add progress indicator
+        stages = {
+            RevealStage.STATS: "Stats",
+            RevealStage.ECONOMY: "Economy",
+            RevealStage.FULL: "Full Reveal"
+        }
+        current_ball = self.current_index + 1
+        current_stage = stages.get(self.current_stage, "")
+        progress_bar = "▰" * self.current_index + "▱" * (len(self.instances) - self.current_index)
+        embed.set_footer(text=f"Ball {current_ball}/{len(self.instances)} | {current_stage}\n{progress_bar}")
 
         return embed
 
@@ -156,7 +181,7 @@ class daily(commands.Cog):
         instances_data = []
         log_message = f"{interaction.user} claimed their daily pack and received: "
 
-        for _ in range(5):
+        for _ in range(3):
             countryball = await CountryBall.get_random()
             special = await self.get_special()
             
@@ -174,10 +199,8 @@ class daily(commands.Cog):
             special_log = f" ({special.name})" if special else ""
             log_message += f"{countryball.name}{special_log} ({instance.attack_bonus:+d} ATK, {instance.health_bonus:+d} HP), "
 
-        view = PackOpeningView(self.bot, instances_data)
-        initial_embed = await view.create_pack_embed()
-        
-        await interaction.followup.send(embed=initial_embed, view=view)
+        pack_opening = AutomatedPackOpening(self.bot, instances_data)
+        await pack_opening.start_reveal(interaction)
         
         # Log the pack opening
         log_message = log_message.rstrip(", ")

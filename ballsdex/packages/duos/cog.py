@@ -301,12 +301,22 @@ class Duos(commands.GroupCog):
             )
 
     @app_commands.command()
-    @app_commands.describe(duo="The duo card to boost")
+    @app_commands.describe(
+        duo="The duo card to boost",
+        amount="The number of times to boost (default: 1)"
+    )
     @app_commands.choices(duo=[app_commands.Choice(name=name, value=name) for name in DUOS_AVAILABLE])
-    async def boost(self, interaction: discord.Interaction, duo: app_commands.Choice[str]):
-        """Boost a duo card's stats using additional players."""
+    async def boost(self, interaction: discord.Interaction, duo: app_commands.Choice[str], amount: int = 1):
+        """Boost a duo card's stats using additional players. Optionally specify how many times to boost."""
         await interaction.response.defer(ephemeral=True)
-    
+
+        # Validate amount
+        if amount <= 0:
+            return await interaction.followup.send(
+                "The boost amount must be at least 1.",
+                ephemeral=True
+            )
+
         try:
             player, duo_ball, duo_name = await self._get_player_and_check_duo(interaction, duo.value)
             if not all([player, duo_ball, duo_name]):
@@ -319,8 +329,27 @@ class Duos(commands.GroupCog):
                     ephemeral=True
                 )
 
-            # Check if already at max stats
+            # Check if both stats are already at max
             if duo_instance.attack_bonus >= 20 and duo_instance.health_bonus >= 20:
+                return await interaction.followup.send(
+                    f"Your {duo_name} duo card cannot be boosted further, it's already maxed",
+                    ephemeral=True
+                )
+
+            # Calculate maximum possible boosts for each stat
+            max_attack_boost = 20 - duo_instance.attack_bonus if duo_instance.attack_bonus < 20 else 0
+            max_health_boost = 20 - duo_instance.health_bonus if duo_instance.health_bonus < 20 else 0
+            
+            # Calculate how many times we can actually boost based on stats
+            effective_amount = min(amount, max(max_attack_boost, max_health_boost))
+            
+            if effective_amount < amount:
+                await interaction.followup.send(
+                    f"You requested {amount} boosts, but only {effective_amount} can be applied before reaching max stats.",
+                    ephemeral=True
+                )
+
+            if effective_amount == 0:
                 return await interaction.followup.send(
                     f"Your {duo_name} duo card cannot be boosted further, it's already maxed",
                     ephemeral=True
@@ -333,28 +362,35 @@ class Duos(commands.GroupCog):
                 is_boost=True
             )
 
-            if len(boost_instances) < len(DUOS_AVAILABLE[duo_name]['requirements']):
-                return await interaction.followup.send(
-                    self.format_progress_message(progress_tracking, is_boost=True),
-                    ephemeral=True
-                )
+            # For multiple boosts, check if we have enough of each required ball
+            for ball_name, (current, required) in progress_tracking.items():
+                if current < required * effective_amount:
+                    return await interaction.followup.send(
+                        f"You need {required * effective_amount} {ball_name} balls for {effective_amount} boosts, but you only have {current}.",
+                        ephemeral=True
+                    )
 
-            # Calculate boost amount based on current stats
-            boost_amount = min(
-                20 - duo_instance.attack_bonus,
-                20 - duo_instance.health_bonus,
-                1  # Always boost by 1
-            )
+            # Calculate actual boost amounts (capped at max 20 for each stat)
+            actual_attack_boost = min(effective_amount, max_attack_boost)
+            actual_health_boost = min(effective_amount, max_health_boost)
 
-            if boost_amount <= 0:
-                return await interaction.followup.send(
-                    f"You don't have a {duo_name} duo card yet, claim it by using /duos craft.",
-                    ephemeral=True
-                )
+            # Prepare the boost message details
+            boost_parts = []
+            if actual_attack_boost > 0:
+                boost_parts.append(f"+{actual_attack_boost} to ATK")
+            if actual_health_boost > 0:
+                boost_parts.append(f"+{actual_health_boost} to HP")
+            
+            boost_message = f"This will give {' and '.join(boost_parts)}."
+
+            # Calculate total balls needed
+            total_balls_needed = {}
+            for ball_name in DUOS_AVAILABLE[duo_name]['requirements'].keys():
+                total_balls_needed[ball_name] = effective_amount
 
             # Ask for confirmation
             requirements_text = "\n".join(
-                f"- {name}: 1" for name in boost_instances.keys()
+                f"- {name}: {count}" for name, count in total_balls_needed.items()
             )
             confirm_view = ConfirmChoiceView(
                 interaction,
@@ -363,8 +399,8 @@ class Duos(commands.GroupCog):
             )
 
             await interaction.followup.send(
-                f"Are you sure you want to boost your {duo_name} duo card? This will consume:\n`{requirements_text}`\n"
-                f"This will give +1 to both ATK and HP.",
+                f"Are you sure you want to boost your {duo_name} duo card {effective_amount} time(s)? This will consume:\n`{requirements_text}`\n"
+                f"{boost_message}",
                 ephemeral=True,
                 view=confirm_view
             )
@@ -375,25 +411,40 @@ class Duos(commands.GroupCog):
 
             @atomic()
             async def boost_duo():
-                for _, (_, instances) in boost_instances.items():
-                    # Only delete one instance of each required ball
-                    await instances[0].delete()
+                for ball_name, (ball, instances) in boost_instances.items():
+                    # Delete the required number of instances
+                    for i in range(min(effective_amount, len(instances))):
+                        await instances[i].delete()
 
-                duo_instance.attack_bonus += boost_amount
-                duo_instance.health_bonus += boost_amount
+                # Update stats individually
+                old_attack = duo_instance.attack_bonus
+                old_health = duo_instance.health_bonus
+                
+                duo_instance.attack_bonus = min(20, duo_instance.attack_bonus + actual_attack_boost)
+                duo_instance.health_bonus = min(20, duo_instance.health_bonus + actual_health_boost)
                 await duo_instance.save()
+                
+                return old_attack, old_health
 
-            await boost_duo()
+            old_attack, old_health = await boost_duo()
+
+            # Create a detailed message about what was boosted
+            boost_details = []
+            if actual_attack_boost > 0:
+                boost_details.append(f"New ATK `{duo_instance.attack_bonus:+d}%`)")
+            if actual_health_boost > 0:
+                boost_details.append(f"New HP `{duo_instance.health_bonus:+d}%`)")
+            
+            boost_detail_text = " and ".join(boost_details)
 
             await interaction.followup.send(
-                f"Successfully boosted your {duo_name} duo card! New stats: "
-                f"`ATK:{duo_instance.attack_bonus:+d}% HP:{duo_instance.health_bonus:+d}`%",
+                f"Successfully boosted your `{duo_name}` duo card `{effective_amount}` time(s)! {boost_detail_text}",
                 ephemeral=True
             )
 
             await log_action(
-                f"{interaction.user} boosted their {duo_name} duo card by +{boost_amount} using "
-                f"one of each required ball.",
+                f"{interaction.user} boosted their {duo_name} duo card by {boost_detail_text} using "
+                f"{effective_amount} of each required ball.",
                 self.bot
             )
 

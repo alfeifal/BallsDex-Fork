@@ -52,6 +52,7 @@ DAMAGERNG = [6000,7000] # Damage a boss can deal IF attack_amount has NOT been i
 
 
 LOGCHANNEL = 1331582589663838270
+OUTPUTCHANNEL = 1318949931054006312
 #Change this if you want to a different channel for boss logs
 #e.g.
 #LOGCHANNEL = 1234567890987654321
@@ -67,6 +68,16 @@ async def log_action(message: str, bot: BallsDexBot, console_log: bool = False):
         await channel.send(message)
     if console_log:
         log.info(message)
+        
+async def get_output_channel(bot: BallsDexBot):
+    channel = bot.get_channel(OUTPUTCHANNEL)
+    if not channel:
+        log.warning(f"Output channel {OUTPUTCHANNEL} not found")
+        return None
+    if not isinstance(channel, discord.TextChannel):
+        log.warning(f"Channel {channel.name} is not a text channel")  # type: ignore
+        return None
+    return channel       
 
 import discord
 from discord.ui import View, Button
@@ -101,8 +112,10 @@ class JoinButton(View):
         self.boss_cog.bossHP = new_hp
         
         await interaction.response.send_message("You have joined the Boss Battle!", ephemeral=True) 
+    
         
     async def on_timeout(self):
+        output_channel = await get_output_channel(self.boss_cog.bot) or self.message.channel
         # Remove button once the time ends
         for item in self.children:
             if isinstance(item, Button) and item.custom_id == "join_boss":
@@ -113,7 +126,8 @@ class JoinButton(View):
             await self.message.edit(content="The boss battle has begun!", view=self)
             
         # Start first round
-        await self.boss_cog.start_first_round(self.message.channel)
+        if self.boss_cog.boss_enabled:
+            await self.boss_cog.start_first_round(output_channel)
         
 @app_commands.guilds(*settings.admin_guild_ids)
 class Boss(commands.GroupCog):
@@ -151,9 +165,16 @@ class Boss(commands.GroupCog):
         extra_hp = (players // 1) * 40000
 
         return base_hp + extra_hp
+    
+    def cleanup_tasks(self):
+        """Clean up any running tasks"""
+        if self.round_task and not self.round_task.done():
+            self.round_task.cancel()
+            self.round_task = None
         
     async def start_first_round(self, channel: discord.TextChannel):
         """Start a defending round automatically and process the other logics frfrrfr"""
+        output_channel = await get_output_channel(self.bot) or channel
         if self.boss_enabled and not self.picking:
             self.round += 1
             self.picking = True
@@ -173,7 +194,7 @@ class Boss(commands.GroupCog):
             else:
                 file = discord.File(file_location, filename=file_name)
 
-            await channel.send(
+            await output_channel.send(
                 f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}",
                 file=file
             )
@@ -249,13 +270,13 @@ class Boss(commands.GroupCog):
                 
             # Send round stats file
             with open("roundstats.txt", "rb") as file:
-                await channel.send(file=discord.File(file, "roundstats.txt"))
+                await output_channel.send(file=discord.File(file, "roundstats.txt"))
                     
             self.currentvalue = ("")
             self.round_task = None
             
             # Start next round automatically
-            await self.start_next_round(channel)
+            await self.start_next_round(output_channel)
 
 
     async def auto_select_ball(self, user_id: int) -> BallInstance | None:
@@ -360,6 +381,7 @@ class Boss(commands.GroupCog):
 
     async def end_round_timeout(self, channel: discord.TextChannel):
         """Modified end_round_timeout to auto-process selections"""
+        output_channel = await get_output_channel(self.bot) or channel
         await asyncio.sleep(20)  # Wait for 20 seconds just for testing and cuz im too lazy to wait for a minute, set how long you want your 
         # rounds to last for here 
         
@@ -387,42 +409,43 @@ class Boss(commands.GroupCog):
         # Send round end message
         if not self.attack:
             if int(self.bossHP) <= 0:
-                await channel.send(
+                await output_channel.send(
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!"
                 )
                 # Boss has been defeated, conclude the battle
-                await self.auto_conclude(channel)
+                await self.auto_conclude(output_channel)
                 return
             else:
-                await channel.send(
+                await output_channel.send(
                     f"Round {self.round} is over, calculating damage ..."
                 )
         else:
             if len(self.users) == 0:
-                await channel.send(
+                await output_channel.send(
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\nThe boss has won!"
                 )
                 # All players died, conclude the battle
                 await self.auto_conclude(channel)
                 return
             else:
-                await channel.send(
+                await output_channel.send(
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\n"
                 )
                 
         # Send round stats file
         with open("roundstats.txt", "rb") as file:
-            await channel.send(file=discord.File(file, "roundstats.txt"))
+            await output_channel.send(file=discord.File(file, "roundstats.txt"))
                 
         self.currentvalue = ("")
         self.round_task = None
         
         
         # Start next round automatically
-        await self.start_next_round(channel)
+        await self.start_next_round(output_channel)
 
     async def start_next_round(self, channel: discord.TextChannel):
         """Start the next round automatically after a cooldown"""
+        output_channel = await get_output_channel(self.bot) or channel
         # Announce cooldown
         countdown_message = await channel.send("Next round starts in 10 seconds...")
         for i in range(10, 0, -1):
@@ -451,7 +474,7 @@ class Boss(commands.GroupCog):
                 
             self.bossattack = random.randrange(DAMAGERNG[0], DAMAGERNG[1], 100)
             
-            await channel.send(
+            await output_channel.send(
                 (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"),
                 file=file
             )
@@ -461,7 +484,7 @@ class Boss(commands.GroupCog):
             else:
                 file = discord.File(file_location, filename=file_name)
                 
-            await channel.send(
+            await output_channel.send(
                 (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"),
                 file=file
             )
@@ -469,12 +492,14 @@ class Boss(commands.GroupCog):
         self.picking = True
         
         # Start the timeout task for the new round
-        self.round_task = asyncio.create_task(self.end_round_timeout(channel))
+        self.round_task = asyncio.create_task(self.end_round_timeout(output_channel))
 
     async def auto_conclude(self, channel: discord.TextChannel):
         """Automatically conclude the boss battle if theres no players alive left or boss dies"""
+        output_channel = await get_output_channel(self.bot) or channel
         self.picking = False
         self.boss_enabled = False
+        self.cleanup_tasks()
         
         # Calculate total damage for each user
         test = self.usersdamage
@@ -554,7 +579,7 @@ class Boss(commands.GroupCog):
             )
         
         # Send the embed
-        await channel.send(embed=embed)
+        await output_channel.send(embed=embed)
         
         # Reset all battle variables
         self.round = 0
@@ -590,7 +615,22 @@ class Boss(commands.GroupCog):
         if self.boss_enabled == True:
             return await interaction.response.send_message(f"There is already an ongoing boss battle", ephemeral=True)
         
+        self.cleanup_tasks()
         await interaction.response.defer(ephemeral=True, thinking=True)
+        
+        self.round = 0
+        self.balls = []
+        self.users = []
+        self.currentvalue = ("")
+        self.usersdamage = []
+        self.usersinround = []
+        self.attack = False
+        self.bossattack = 0
+        self.bossball = None
+        self.bosswildd = []
+        self.bosswilda = []
+        self.disqualified = []
+        self.lasthitter = 0
         
         # Calculate HP based on boss rarity and initial number of players (we'll use 1 as starting point)
         # HP will scale as more players join during the join phase
@@ -616,7 +656,9 @@ class Boss(commands.GroupCog):
             f"Boss successfully started", ephemeral=True
         )
         
-        message = await interaction.channel.send(
+        output_channel = await get_output_channel(self.bot) or interaction.channel
+        
+        message = await output_channel.send(
             f"<@&1308512664124788837> A boss battle has begun <a:Crown:1331246693546594372>", # change your starting message here
             file=file,
             view=view
@@ -794,6 +836,7 @@ class Boss(commands.GroupCog):
         await interaction.response.defer(ephemeral=True, thinking=True)
         self.picking = False
         self.boss_enabled = False
+        self.cleanup_tasks()
         test = self.usersdamage
         test2 = []
         total = ("")
@@ -865,7 +908,7 @@ class Boss(commands.GroupCog):
             await interaction.followup.send(
                 f"Boss successfully concluded", ephemeral=True
             )
-            await interaction.channel.send(
+            await interaction.followup.send(
                 f"# <a:Crown:1331246693546594372> Boss has concluded \n👑 <@{bosswinner}>  ꜱᴛᴏᴏᴅ ᴛᴀʟʟ ᴀɢᴀɪɴꜱᴛ ᴏᴅᴅꜱ ᴀɴᴅ ᴄʟᴀɪᴍᴇᴅ ᴠɪᴄᴛᴏʀʏ ꜰʀᴏᴍ ᴀ ᴍɪɢʜᴛʏ ʙᴏꜱꜱ, ᴡʀɪᴛɪɴɢ ᴛʜᴇɪʀ ɴᴀᴍᴇ ɪɴ ʟᴇɢᴇɴᴅꜱ. 👑\n\n"
                 f"`Boss` `{self.bossball}` {settings.collectible_name} was successfully given.\n"
             )
@@ -881,11 +924,11 @@ class Boss(commands.GroupCog):
             await interaction.followup.send(
                 f"Boss successfully concluded", ephemeral=True
             )
-            await interaction.channel.send(f"# Boss has concluded \nThe boss has been defeated!")
+            await interaction.followup.send(f"# Boss has concluded \nThe boss has been defeated!")
         with open("totalstats.txt", "w") as file:
             file.write(f"{total}{total2}")
         with open("totalstats.txt", "rb") as file:
-            await interaction.channel.send(file=discord.File(file, "totalstats.txt"))
+            await interaction.followup.send(file=discord.File(file, "totalstats.txt"))
         self.round = 0
         self.balls = []
         self.users = []

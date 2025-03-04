@@ -10,6 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from tortoise import timezone
+from random import randint
 
 from ballsdex.core.bot import BallsDexBot
 from ballsdex.core.models import Ball, BallInstance, Player, Special
@@ -304,12 +305,12 @@ class RedeemCodes(commands.Cog):
         # Get code by name instead of code value
         redemption_code = await self._get_code_by_name(name)
         if not redemption_code:
-            await interaction.followup.send("❌ Invalid code name.", ephemeral=True)
+            await interaction.followup.send("Invalid code name.", ephemeral=True)
             return
 
         if not await self._is_valid_code(redemption_code):
             await interaction.followup.send(
-                "❌ This code is either expired, inactive, or has reached its usage limit.",
+                "This code is either expired, inactive, or has reached its usage limit.",
                 ephemeral=True
             )
             return
@@ -317,7 +318,7 @@ class RedeemCodes(commands.Cog):
         player, _ = await Player.get_or_create(discord_id=interaction.user.id)
         if await self._has_redeemed(interaction.user.id, redemption_code.code):
             await interaction.followup.send(
-                "❌ You have already redeemed this code.",
+                "You have already redeemed this code.",
                 ephemeral=True
             )
             return
@@ -390,10 +391,10 @@ class RedeemCodes(commands.Cog):
         quantity="Number of balls to give (1-10)",
         attack_bonus="Attack bonus percentage",
         health_bonus="Health bonus percentage",
-        min_attack="Minimum attack bonus (-100 to 100)",
-        max_attack="Maximum attack bonus (-100 to 100)",
-        min_health="Minimum health bonus (-100 to 100)",
-        max_health="Maximum health bonus (-100 to 100)",
+        min_attack="Minimum attack bonus (-20 to 20)",
+        max_attack="Maximum attack bonus (-20 to 20)",
+        min_health="Minimum health bonus (-20 to 20)",
+        max_health="Maximum health bonus (-20 to 20)",
         days_valid="Number of days the code remains valid",
         description="Description of the code",
         code="The internal code ID (for actions other than create)"
@@ -405,7 +406,7 @@ class RedeemCodes(commands.Cog):
         app_commands.Choice(name="Delete Redeem Code", value="delete"),
         app_commands.Choice(name="Get Code Info", value="info")
     ])
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
     async def admin_redeem(
         self,
         interaction: discord.Interaction,
@@ -441,20 +442,20 @@ class RedeemCodes(commands.Cog):
                 return
                 
             if quantity < 1 or quantity > 10:
-                await interaction.followup.send("❌ quantity must be between 1 and 10.", ephemeral=True)
+                await interaction.followup.send("quantity must be between 1 and 10.", ephemeral=True)
                 return
                 
-            if min_attack < -100 or max_attack > 100 or min_health < -100 or max_health > 100:
-                await interaction.followup.send("❌ Bonus values must be between -100 and 100.", ephemeral=True)
+            if min_attack < -20 or max_attack > 20 or min_health < -20 or max_health > 20:
+                await interaction.followup.send("Bonus values must be between -20 and 20.", ephemeral=True)
                 return
                 
             if min_attack > max_attack or min_health > max_health:
-                await interaction.followup.send("❌ Minimum values cannot be greater than maximum values.", ephemeral=True)
+                await interaction.followup.send("Minimum values cannot be greater than maximum values.", ephemeral=True)
                 return
             
             if not countryball:
                 if not regime and not economy:
-                    await interaction.followup.send("❌ You must specify a countryball, regime, or economy.", ephemeral=True)
+                    await interaction.followup.send("You must specify a countryball, regime, or economy.", ephemeral=True)
                     return
                 
                 # Build the query for balls based on regime and/or economy
@@ -467,7 +468,7 @@ class RedeemCodes(commands.Cog):
                 # Get all matching balls and select a random one
                 matching_balls = await Ball.filter(**query)
                 if not matching_balls:
-                    await interaction.followup.send("❌ No countryballs found matching the specified regime and/or economy.", ephemeral=True)
+                    await interaction.followup.send("No countryballs found matching the specified regime and/or economy.", ephemeral=True)
                     return
                 
                 # Select a random ball from the matches
@@ -476,7 +477,7 @@ class RedeemCodes(commands.Cog):
             # Check if name already exists
             existing_code = await self._get_code_by_name(name)
             if existing_code:
-                await interaction.followup.send("❌ A code with this name already exists.", ephemeral=True)
+                await interaction.followup.send("A code with this name already exists.", ephemeral=True)
                 return
             
             # Generate a new internal code (still needed for tracking)
@@ -541,7 +542,7 @@ class RedeemCodes(commands.Cog):
             active_codes = [code for code in codes if code.active]
             
             if not active_codes:
-                await interaction.followup.send("❌ No active codes found.", ephemeral=True)
+                await interaction.followup.send("No active codes found.", ephemeral=True)
                 return
             
             entries = []
@@ -570,7 +571,7 @@ class RedeemCodes(commands.Cog):
             
         elif action == "disable":
             if not code:
-                await interaction.followup.send("❌ You must provide a code to disable.", ephemeral=True)
+                await interaction.followup.send("You must provide a code to disable.", ephemeral=True)
                 return
             
             # Find and disable the code
@@ -581,7 +582,7 @@ class RedeemCodes(commands.Cog):
             for c in codes:
                 if c.code == code:
                     if not c.active:
-                        await interaction.followup.send("❌ This code is already inactive.", ephemeral=True)
+                        await interaction.followup.send("This code is already inactive.", ephemeral=True)
                         return
                     
                     c.active = False
@@ -589,7 +590,7 @@ class RedeemCodes(commands.Cog):
                     break
             
             if not found:
-                await interaction.followup.send("❌ Code not found.", ephemeral=True)
+                await interaction.followup.send("Code not found.", ephemeral=True)
                 return
             
             await self._save_codes(codes)
@@ -603,7 +604,7 @@ class RedeemCodes(commands.Cog):
             
         elif action == "delete":
             if not code:
-                await interaction.followup.send("❌ You must provide a code to delete.", ephemeral=True)
+                await interaction.followup.send("You must provide a code to delete.", ephemeral=True)
                 return
             
             # Find and delete the code
@@ -618,7 +619,7 @@ class RedeemCodes(commands.Cog):
                     break
             
             if not code_obj:
-                await interaction.followup.send("❌ Code not found.", ephemeral=True)
+                await interaction.followup.send("Code not found.", ephemeral=True)
                 return
             
             await self._save_codes(codes)
@@ -632,14 +633,14 @@ class RedeemCodes(commands.Cog):
             
         elif action == "info":
             if not code:
-                await interaction.followup.send("❌ You must provide a code to get info.", ephemeral=True)
+                await interaction.followup.send("You must provide a code to get info.", ephemeral=True)
                 return
             
             code = code.upper()
             redemption_code = await self._get_code(code)
             
             if not redemption_code:
-                await interaction.followup.send("❌ Code not found.", ephemeral=True)
+                await interaction.followup.send("Code not found.", ephemeral=True)
                 return
             
             # Load related objects
@@ -663,7 +664,7 @@ class RedeemCodes(commands.Cog):
             
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("❌ Unknown action. Valid actions are: create, list, disable, delete, info", ephemeral=True)
+            await interaction.followup.send("Unknown action. Valid actions are: create, list, disable, delete, info", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(RedeemCodes(bot))

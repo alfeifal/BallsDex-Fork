@@ -572,3 +572,4 @@ class Block(models.Model):
 
     def __str__(self) -> str:
         return str(self.pk)
+    

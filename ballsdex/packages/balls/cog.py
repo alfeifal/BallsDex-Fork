@@ -1,5 +1,7 @@
 import enum
 import logging
+import datetime
+import random
 from typing import TYPE_CHECKING
 
 import discord
@@ -9,13 +11,15 @@ from discord.ui import Button, View, button
 from tortoise.exceptions import DoesNotExist
 from tortoise.functions import Count
 
-from ballsdex.core.models import BallInstance, DonationPolicy, Player, Trade, TradeObject, balls
+from ballsdex.core.models import BallInstance, DonationPolicy, Player, Trade, TradeObject, balls, Regime
 from ballsdex.core.utils.buttons import ConfirmChoiceView
+from ballsdex.core.utils.logging import log_action
 from ballsdex.core.utils.paginator import FieldPageSource, Pages
 from ballsdex.core.utils.sorting import SortingChoices, sort_balls
 from ballsdex.core.utils.transformers import (
     BallEnabledTransform,
     BallInstanceTransform,
+    RegimeTransform,
     SpecialEnabledTransform,
     TradeCommandType,
 )
@@ -121,6 +125,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         user: discord.User | None = None,
         sort: SortingChoices | None = None,
         reverse: bool = False,
+        regime: RegimeTransform | None = None,
         countryball: BallEnabledTransform | None = None,
         special: SpecialEnabledTransform | None = None,
     ):
@@ -135,6 +140,8 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             Choose how countryballs are sorted. Can be used to show duplicates.
         reverse: bool
             Reverse the output of the list.
+        regime: Regime
+            The team of which balls you want to filter.
         countryball: Ball
             Filter the list by a specific countryball.
         special: Special
@@ -170,27 +177,31 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
 
         await player.fetch_related("balls")
         query = player.balls.all()
+
+        # Apply filters
         if countryball:
             query = query.filter(ball__id=countryball.pk)
         if special:
             query = query.filter(special=special)
+        if regime:
+            query = query.filter(ball__regime=regime)
+
         if sort:
             countryballs = await sort_balls(sort, query)
         else:
             countryballs = await query.order_by("-favorite")
 
         if len(countryballs) < 1:
-            ball_txt = countryball.country if countryball else ""
-            special_txt = special if special else ""
+            # Build filter description
+            filter_parts = []
+            if countryball:
+                filter_parts.append(countryball.country)
+            if special:
+                filter_parts.append(str(special))
+            if regime:
+                filter_parts.append(str(regime))
 
-            if special_txt and ball_txt:
-                combined = f"{special_txt} {ball_txt}"
-            elif special_txt:
-                combined = special_txt
-            elif ball_txt:
-                combined = ball_txt
-            else:
-                combined = ""
+            combined = " ".join(filter_parts) if filter_parts else ""
 
             if user_obj == interaction.user:
                 await interaction.followup.send(
@@ -202,6 +213,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
                     f"{settings.plural_collectible_name} yet."
                 )
             return
+
         if reverse:
             countryballs.reverse()
 
@@ -210,7 +222,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             await paginator.start()
         else:
             await paginator.start(
-                content=f"Viewing {user_obj.name}'s {settings.plural_collectible_name}"
+                content=f"Viewing {user_obj.name}'s obtained {settings.plural_collectible_name}"
             )
 
     @app_commands.command()
@@ -621,6 +633,7 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
         interaction: discord.Interaction,
         countryball: BallEnabledTransform | None = None,
         special: SpecialEnabledTransform | None = None,
+        regime: RegimeTransform | None = None,
         current_server: bool = False,
     ):
         """
@@ -632,6 +645,8 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             The countryball you want to count
         special: Special
             The special you want to count
+        regime: Regime
+            The regime you want to count
         current_server: bool
             Only count countryballs caught in the current server
         """
@@ -643,19 +658,21 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             filters["ball"] = countryball
         if special:
             filters["special"] = special
+        if regime:
+            filters["ball__regime"] = regime
         if current_server:
             filters["server_id"] = interaction.guild.id
         filters["player__discord_id"] = interaction.user.id
         await interaction.response.defer(ephemeral=True, thinking=True)
         balls = await BallInstance.filter(**filters).count()
         country = f"{countryball.country} " if countryball else ""
+        regime_str = f"{regime.name} " if regime else ""
         plural = "s" if balls > 1 or balls == 0 else ""
         special_str = f"{special.name} " if special else ""
         guild = f" caught in {interaction.guild.name}" if current_server else ""
         await interaction.followup.send(
-            f"You have {balls} {special_str}"
-            f"{country}{settings.collectible_name}{plural}{guild}."
-        )
+            f"You have {balls} {special_str}{regime_str}{country}{settings.collectible_name}{plural}{guild}."
+    )
 
     @app_commands.command()
     @app_commands.checks.cooldown(1, 60, key=lambda i: i.user.id)

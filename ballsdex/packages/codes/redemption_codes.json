@@ -1,0 +1,24 @@
+[
+  {
+    "code": "APE8PSYS3LSD",
+    "created_by": 726716658911281214,
+    "created_at": "2025-03-04T15:17:40.365855",
+    "name": "aaa",
+    "expires_at": null,
+    "max_uses": 1,
+    "uses": 1,
+    "active": true,
+    "description": null,
+    "ball_id": 11,
+    "regime_id": 4,
+    "economy_id": null,
+    "special_id": null,
+    "quantity": 1,
+    "attack_bonus": 0,
+    "health_bonus": 0,
+    "min_attack_bonus": -20,
+    "max_attack_bonus": 20,
+    "min_health_bonus": -20,
+    "max_health_bonus": 20
+  }
+]

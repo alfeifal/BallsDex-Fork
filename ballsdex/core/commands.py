@@ -220,4 +220,8 @@ class Core(commands.Cog):
                 f"<https://discord.com/developers/applications/{self.bot.application.id}/emojis>)."
             )
         finally:
+<<<<<<< HEAD
             task.cancel()
+=======
+            task.cancel()
+>>>>>>> 18f2a7d61ed15ae411df4e499c7b38dab73d3daa

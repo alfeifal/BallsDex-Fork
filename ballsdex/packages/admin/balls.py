@@ -145,9 +145,12 @@ class Balls(app_commands.Group):
         regime: RegimeTransform | None = None,
         channel: discord.TextChannel | None = None,
         n: app_commands.Range[int, 1, 100] = 1,
+<<<<<<< HEAD
         special: SpecialTransform | None = None,
         atk_bonus: int | None = None,
         hp_bonus: int | None = None,
+=======
+>>>>>>> 87ddcf3 ([admin] Use build in range instead of explicitly defined variables (#532))
     ):
         """
         Force spawns a random or specified countryball, optionally from a specified regime.

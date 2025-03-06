@@ -572,9 +572,4 @@ class Block(models.Model):
     date = fields.DatetimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-<<<<<<< HEAD
         return str(self.pk)
-    
-=======
-        return str(self.pk)
->>>>>>> dae21f6 (Guardando cambios antes del pull)

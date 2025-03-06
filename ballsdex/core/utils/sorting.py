@@ -6,7 +6,8 @@ from tortoise.expressions import F, RawSQL
 if TYPE_CHECKING:
     from tortoise.queryset import QuerySet
 
-    from ballsdex.core.models import BallInstance
+    from ballsdex.core.models import BallInstance, Special
+    
 
 
 class SortingChoices(enum.Enum):
@@ -52,6 +53,8 @@ def sort_balls(
         return queryset.annotate(stats_bonus=F("health_bonus") + F("attack_bonus")).order_by(
             "-stats_bonus"
         )
+    elif sort == SortingChoices.special:
+        return queryset.order_by(sort.value, "special__start_date")
     elif sort == SortingChoices.health or sort == SortingChoices.attack:
         # Use the sorting name as the annotation key to avoid issues when this function
         # is called multiple times. Using the same annotation name twice will error.
@@ -73,3 +76,4 @@ def sort_balls(
         return queryset.order_by(sort.value, "ball__country")
     else:
         return queryset.order_by(sort.value)
+    

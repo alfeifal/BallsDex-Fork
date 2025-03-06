@@ -108,14 +108,14 @@ class JoinButton(View):
         self.boss_cog.users.append(interaction.user.id)
         
         # Recalculate HP based on new player count
-        new_hp = Boss.calculate_boss_hp(self.boss_cog.bossball.rarity, len(self.boss_cog.users))
+        new_hp = Boss.calculate_boss_hp(self.boss_cog.bossball.rarity, len(self.boss_cog.users)) #type: ignore
         self.boss_cog.bossHP = new_hp
         
         await interaction.response.send_message("You have joined the Boss Battle!", ephemeral=True) 
     
         
     async def on_timeout(self):
-        output_channel = await get_output_channel(self.boss_cog.bot) or self.message.channel
+        output_channel = await get_output_channel(self.boss_cog.bot) or self.message.channel #type: ignore
         # Remove button once the time ends
         for item in self.children:
             if isinstance(item, Button) and item.custom_id == "join_boss":
@@ -157,12 +157,12 @@ class Boss(commands.GroupCog):
         
     def calculate_boss_hp(rarity: int, players: int) -> int: # type: ignore
         """Calculate the bosses HP according to rarity and number of people that joined"""
-        base_hp = 50000 # set the HP according to your card's average stats
+        base_hp = 10000 # set the HP according to your card's average stats
 
         if rarity == 1:  # T1
-            base_hp = 70000
+            base_hp = 10000
 
-        extra_hp = (players // 1) * 40000
+        extra_hp = (players // 1) * 10000
 
         return base_hp + extra_hp
     
@@ -185,8 +185,8 @@ class Boss(commands.GroupCog):
                 source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
                 return "".join(random.choices(source, k=15))
 
-            extension = self.bossball.wild_card.split(".")[-1]
-            file_location = "./admin_panel/media/" + self.bossball.wild_card
+            extension = self.bossball.wild_card.split(".")[-1] #type: ignore
+            file_location = "./admin_panel/media/" + self.bossball.wild_card #type: ignore
             file_name = f"nt_{generate_random_name()}.{extension}"
 
             if self.bosswildd[1] == 2:
@@ -195,7 +195,7 @@ class Boss(commands.GroupCog):
                 file = discord.File(file_location, filename=file_name)
 
             await output_channel.send(
-                f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}",
+                f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}", #type: ignore
                 file=file
             )
 
@@ -238,6 +238,9 @@ class Boss(commands.GroupCog):
                         elif "⚔️" in ball_desc:
                             ballhealth += BOSSBUFFS[1]
                             ballattack += BOSSBUFFS[0]
+                        elif "<:toty:1333867672718540832>" in ball_desc:
+                            ballhealth += MYTHICBUFFS[1]
+                            ballattack += MYTHICBUFFS[0]
                         
                         # Process attack
                         self.bossHP -= ballattack
@@ -258,10 +261,10 @@ class Boss(commands.GroupCog):
             # Send round end message
             if int(self.bossHP) <= 0:
                 await channel.send(
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!"
+                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!" #type: ignore
                 )
                 # Boss has been defeated, conclude the battle
-                await self.auto_conclude(channel)
+                await self.auto_conclude(output_channel)
                 return
             else:
                 await channel.send(
@@ -410,7 +413,7 @@ class Boss(commands.GroupCog):
         if not self.attack:
             if int(self.bossHP) <= 0:
                 await output_channel.send(
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!"
+                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!" #type: ignore
                 )
                 # Boss has been defeated, conclude the battle
                 await self.auto_conclude(output_channel)
@@ -422,14 +425,14 @@ class Boss(commands.GroupCog):
         else:
             if len(self.users) == 0:
                 await output_channel.send(
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\nThe boss has won!"
+                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\nThe boss has won!" #type: ignore
                 )
                 # All players died, conclude the battle
-                await self.auto_conclude(channel)
+                await self.auto_conclude(output_channel)
                 return
             else:
                 await output_channel.send(
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\n"
+                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\n" #type: ignore
                 )
                 
         # Send round stats file
@@ -462,8 +465,8 @@ class Boss(commands.GroupCog):
             source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
             return "".join(random.choices(source, k=15))
             
-        extension = self.bossball.wild_card.split(".")[-1]
-        file_location = "./admin_panel/media/" + self.bossball.wild_card
+        extension = self.bossball.wild_card.split(".")[-1] #type: ignore
+        file_location = "./admin_panel/media/" + self.bossball.wild_card #type: ignore
         file_name = f"nt_{generate_random_name()}.{extension}"
         
         if self.attack:
@@ -475,7 +478,7 @@ class Boss(commands.GroupCog):
             self.bossattack = random.randrange(DAMAGERNG[0], DAMAGERNG[1], 100)
             
             await output_channel.send(
-                (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"),
+                (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"), #type: ignore
                 file=file
             )
         else:
@@ -485,7 +488,7 @@ class Boss(commands.GroupCog):
                 file = discord.File(file_location, filename=file_name)
                 
             await output_channel.send(
-                (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"),
+                (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"), #type: ignore
                 file=file
             )
         

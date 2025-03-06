@@ -178,7 +178,7 @@ class Balls(app_commands.Group):
                 interaction, countryball, regime, channel or interaction.channel, n, special, atk_bonus, hp_bonus  # type: ignore
             )
             await log_action(
-                f"{interaction.user} spawned {settings.collectible_name} "
+                f"{interaction.user} spawned {special} {regime} {settings.collectible_name} "
                 f"{countryball or 'random'} {n} times in {channel or interaction.channel}",
                 interaction.client
             )
@@ -187,7 +187,7 @@ class Balls(app_commands.Group):
         await interaction.response.defer(ephemeral=True, thinking=True)
         if not countryball:
             if regime:
-                ball = CountryBall(await Ball.filter(regime=regime).first())
+                ball = CountryBall(await Ball.filter(regime=regime).first()) #type: ignore
             else:
                 ball = await CountryBall.get_random()
         if not countryball:
@@ -198,7 +198,7 @@ class Balls(app_commands.Group):
         ball.atk_bonus = atk_bonus
         ball.hp_bonus = hp_bonus 
 
-        result = await ball.spawn(channel or interaction.channel)
+        result = await ball.spawn(channel or interaction.channel) #type: ignore
 
         if result:
             await interaction.followup.send(
@@ -212,7 +212,7 @@ class Balls(app_commands.Group):
             if hp_bonus is not None:
                 special_attrs.append(f"hp={hp_bonus}")
             await log_action(
-                f"{interaction.user} spawned {settings.collectible_name} {ball.name} "
+                f"{interaction.user} spawned {settings.collectible_name}{special}{atk_bonus}{hp_bonus}{ball.name} "
                 f"in {channel or interaction.channel}"
                 f"{f" ({", ".join(special_attrs)})" if special_attrs else ""}.",
                 interaction.client,
@@ -310,7 +310,7 @@ class Balls(app_commands.Group):
         # If special not specified but we want a random special
         elif random.random() < 0:  # 10% chance for random special
             try:
-                now = timezone.now()
+                now = timezone.now() #type: ignore
                 special_event = await Special.filter(
                     Q(Q(start_date__lte=now) | Q(start_date__isnull=True)) &
                     Q(Q(end_date__gte=now) | Q(end_date__isnull=True)) &
@@ -439,7 +439,7 @@ class Balls(app_commands.Group):
             )
         else:
             await log_action(
-                f"{interaction.user} gave {quantity} {settings.collectible_name} "
+                f"{interaction.user} gave {quantity} {settings.collectible_name} {special} {countryball} {attack_bonus} {health_bonus}"
                 f"{countryball.country} to {user}.",
                 interaction.client,
             )

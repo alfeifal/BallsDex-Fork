@@ -52,7 +52,7 @@ DAMAGERNG = [6000,7000] # Damage a boss can deal IF attack_amount has NOT been i
 
 
 LOGCHANNEL = 1331582589663838270
-OUTPUTCHANNEL = 1318949931054006312
+OUTPUTCHANNEL = 1308125244740866149
 #Change this if you want to a different channel for boss logs
 #e.g.
 #LOGCHANNEL = 1234567890987654321

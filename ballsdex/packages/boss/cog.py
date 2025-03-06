@@ -499,7 +499,6 @@ class Boss(commands.GroupCog):
         output_channel = await get_output_channel(self.bot) or channel
         self.picking = False
         self.boss_enabled = False
-        self.cleanup_tasks()
         
         # Calculate total damage for each user
         test = self.usersdamage
@@ -596,6 +595,7 @@ class Boss(commands.GroupCog):
         self.bosswilda = []
         self.disqualified = []
         self.lasthitter = 0
+        self.cleanup_tasks()
 
     bossadmin = app_commands.Group(name="admin", description="admin commands for boss")
 

@@ -14,7 +14,7 @@ class SortingChoices(enum.Enum):
     alphabetic = "ball__country"
     catch_date = "-catch_date"
     rarity = "ball__rarity"
-    special = "special__id"
+    special = "special__start_date"
     health = "health"
     attack = "attack"
     health_bonus = "-health_bonus"

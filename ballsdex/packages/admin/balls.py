@@ -3,12 +3,13 @@ import logging
 import random
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
 from discord.utils import format_dt
 from tortoise.exceptions import BaseORMException, DoesNotExist
+from tortoise.expressions import Q
+from random import randint
 
 from ballsdex.core.bot import BallsDexBot
 from ballsdex.core.models import Ball, BallInstance, Player, Special, Trade, TradeObject
@@ -20,14 +21,25 @@ from ballsdex.core.utils.transformers import (
     RegimeTransform,
     SpecialTransform,
 )
+from ballsdex.packages.countryballs.countryball import CountryBall
 from ballsdex.settings import settings
-
-if TYPE_CHECKING:
-    from ballsdex.packages.countryballs.cog import CountryBallsSpawner
-    from ballsdex.packages.countryballs.countryball import CountryBall
 
 log = logging.getLogger("ballsdex.packages.admin.balls")
 FILENAME_RE = re.compile(r"^(.+)(\.\S+)$")
+
+LOGCHANNEL = 1331591409030922251
+async def log_action(message: str, bot: BallsDexBot, console_log: bool = False):
+    if LOGCHANNEL:
+        channel = bot.get_channel(LOGCHANNEL)
+        if not channel:
+            log.warning(f"Channel {LOGCHANNEL} not found")
+            return
+        if not isinstance(channel, discord.TextChannel):
+            log.warning(f"Channel {channel.name} is not a text channel")  # type: ignore
+            return
+        await channel.send(message)
+    if console_log:
+        log.info(message)
 
 
 async def save_file(attachment: discord.Attachment) -> Path:
@@ -48,11 +60,12 @@ class Balls(app_commands.Group):
     Countryballs management
     """
 
+    # Fixed spawn method with correct regime parameter passing
     async def _spawn_bomb(
         self,
         interaction: discord.Interaction[BallsDexBot],
-        countryball_cls: type["CountryBall"],
         countryball: Ball | None,
+        regime: RegimeTransform | None,
         channel: discord.TextChannel,
         n: int,
         special: Special | None = None,
@@ -82,12 +95,27 @@ class Balls(app_commands.Group):
         try:
             for i in range(n):
                 if not countryball:
-                    ball = await countryball_cls.get_random()
+                    if regime:
+                        # Handle regime filtering manually
+                        balls = await Ball.filter(regime=regime, enabled=True)
+                        if balls:
+                            ball = CountryBall(random.choice(balls))
+                        else:
+                            task.cancel()
+                            await interaction.followup.edit_message(
+                                "@original",  # type: ignore
+                                content=f"No {settings.plural_collectible_name} found with the specified regime.",
+                            )
+                            return
+                    else:
+                        ball = await CountryBall.get_random()
                 else:
-                    ball = countryball_cls(countryball)
+                    ball = CountryBall(countryball)
+                    
                 ball.special = special
                 ball.atk_bonus = atk_bonus
                 ball.hp_bonus = hp_bonus
+                
                 result = await ball.spawn(channel)
                 if not result:
                     task.cancel()
@@ -114,6 +142,7 @@ class Balls(app_commands.Group):
         self,
         interaction: discord.Interaction[BallsDexBot],
         countryball: BallTransform | None = None,
+        regime: RegimeTransform | None = None,
         channel: discord.TextChannel | None = None,
         n: app_commands.Range[int, 1, 100] = 1,
         special: SpecialTransform | None = None,
@@ -121,12 +150,14 @@ class Balls(app_commands.Group):
         hp_bonus: int | None = None,
     ):
         """
-        Force spawn a random or specified countryball.
+        Force spawns a random or specified countryball, optionally from a specified regime.
 
         Parameters
         ----------
         countryball: Ball | None
             The countryball you want to spawn. Random according to rarities if not specified.
+        regime: Regime | None
+            The regime from which to spawn a countryball. Ignored if a countryball is specified.
         channel: discord.TextChannel | None
             The channel you want to spawn the countryball in. Current channel if not specified.
         n: int
@@ -139,50 +170,35 @@ class Balls(app_commands.Group):
         hp_bonus: int | None
             Force the countryball to have a specific health bonus when caught.
         """
-        # the transformer triggered a response, meaning user tried an incorrect input
         if interaction.response.is_done():
-            return
-        cog = cast("CountryBallsSpawner | None", interaction.client.get_cog("CountryBallsSpawner"))
-        if not cog:
-            prefix = (
-                settings.prefix
-                if interaction.client.intents.message_content or not interaction.client.user
-                else f"{interaction.client.user.mention} "
-            )
-            # do not replace `countryballs` with `settings.collectible_name`, it is intended
-            await interaction.response.send_message(
-                "The `countryballs` package is not loaded, this command is unavailable.\n"
-                "Please resolve the errors preventing this package from loading. Use "
-                f'"{prefix}reload countryballs" to try reloading it.',
-                ephemeral=True,
-            )
             return
 
         if n > 1:
             await self._spawn_bomb(
-                interaction,
-                cog.countryball_cls,
-                countryball,
-                channel or interaction.channel,  # type: ignore
-                n,
+                interaction, countryball, regime, channel or interaction.channel, n, special, atk_bonus, hp_bonus  # type: ignore
             )
             await log_action(
-                f"{interaction.user} spawned {settings.collectible_name}"
-                f" {countryball or 'random'} {n} times in {channel or interaction.channel}.",
-                interaction.client,
+                f"{interaction.user} spawned {settings.collectible_name} "
+                f"{countryball or 'random'} {n} times in {channel or interaction.channel}",
+                interaction.client
             )
-
             return
 
         await interaction.response.defer(ephemeral=True, thinking=True)
         if not countryball:
-            ball = await cog.countryball_cls.get_random()
+            if regime:
+                ball = CountryBall(await Ball.filter(regime=regime).first())
+            else:
+                ball = await CountryBall.get_random()
+        if not countryball:
+            ball = await CountryBall.get_random()
         else:
-            ball = cog.countryball_cls(countryball)
+            ball = CountryBall(countryball)
         ball.special = special
         ball.atk_bonus = atk_bonus
-        ball.hp_bonus = hp_bonus
-        result = await ball.spawn(channel or interaction.channel)  # type: ignore
+        ball.hp_bonus = hp_bonus 
+
+        result = await ball.spawn(channel or interaction.channel)
 
         if result:
             await interaction.followup.send(
@@ -201,6 +217,144 @@ class Balls(app_commands.Group):
                 f"{f" ({", ".join(special_attrs)})" if special_attrs else ""}.",
                 interaction.client,
             )
+    
+    @app_commands.command()
+    @app_commands.checks.has_any_role(*settings.root_role_ids)
+    async def wheel(
+        self,
+        interaction: discord.Interaction,
+        countryball: BallTransform | None = None,
+        regime: RegimeTransform | None = None,
+        economy: EconomyTransform | None = None,
+        min_attack: int | None = None,
+        max_attack: int | None = None,
+        min_health: int | None = None,
+        max_health: int | None = None,
+        special: SpecialTransform | None = None,
+        rarity_min: float | None = None,
+        rarity_max: float | None = None,
+        tradeable_only: bool = False,
+        atk_bonus: int | None = None,
+        hp_bonus: int | None = None,
+    ):
+        """
+        Spin the wheel to get a random ball with optional filters.
+
+        Parameters
+        ----------
+        countryball: Ball | None
+            The specific countryball you want to get. Random according to rarities if not specified.
+        regime: Regime | None
+            The regime from which to get a countryball. Ignored if a countryball is specified.
+        economy: Economy | None
+            The economy from which to get a countryball. Ignored if a countryball is specified.
+        min_attack: Minimum attack stat
+            Maximum attack stat
+        min_health: Minimum health stat
+            Maximum health stat
+        special: Special | None
+            Force the countryball to have a special attribute.
+        tradeable_only: Only show tradeable balls
+            Whether to only show tradeable balls.
+        atk_bonus: int | None
+            Force a specific attack bonus
+        hp_bonus: int | None
+            Force a specific health bonus
+        """
+        await interaction.response.defer(thinking=True)
+        
+        # If specific ball is provided, use that
+        if countryball:
+            ball = countryball
+        else:
+            # Build query with filters
+            query = Q(enabled=True)
+            
+            if regime:
+                query &= Q(regime=regime)
+            
+            if economy:
+                query &= Q(economy=economy)
+            
+            if min_attack is not None:
+                query &= Q(attack__gte=min_attack)
+            
+            if max_attack is not None:
+                query &= Q(attack__lte=max_attack)
+            
+            if min_health is not None:
+                randint (-20, 20)
+            
+            if max_health is not None:
+                randint (-20, 20)
+            
+            if tradeable_only:
+                query &= Q(tradeable=True)
+            
+            # Get a random ball matching our filters
+            try:
+                balls = await Ball.filter(query).all()
+                if balls:
+                    ball = random.choice(balls)
+                else:
+                    return await interaction.followup.send("No balls found matching these filters.")
+                if not ball:
+                    return await interaction.followup.send("No balls found matching these filters.")
+            except Exception as e:
+                return await interaction.followup.send(f"Error retrieving ball: {e}")
+        
+        # Set special event if specified
+        special_event = None
+        if special:
+            special_event = special
+        # If special not specified but we want a random special
+        elif random.random() < 0:  # 10% chance for random special
+            try:
+                now = timezone.now()
+                special_event = await Special.filter(
+                    Q(Q(start_date__lte=now) | Q(start_date__isnull=True)) &
+                    Q(Q(end_date__gte=now) | Q(end_date__isnull=True)) &
+                    Q(hidden=False)
+                ).order_by("?").first()
+            except Exception:
+                pass
+        
+        # Generate random stat bonuses if not specified
+        attack_bonus = atk_bonus if atk_bonus is not None else random.randint(-20, 20)
+        health_bonus = hp_bonus if hp_bonus is not None else random.randint(-20, 20)
+        
+        # Format output strings
+        plusatk = "+" if attack_bonus >= 0 else ""
+        plushp = "+" if health_bonus >= 0 else ""
+        
+        # Build regime and economy info
+        regime_info = f"Regime: {ball.cached_regime.name}" if ball.cached_regime else ""
+        economy_info = f"Economy: {ball.cached_economy.name}" if ball.cached_economy else ""
+        system_info = f"{regime_info} | {economy_info}" if regime_info and economy_info else regime_info or economy_info
+        
+        # Build capacity info
+        capacity_info = f"**{ball.capacity_name}**: {ball.capacity_description}"
+        
+        # Special card info
+        special_info = f"**Special Event:** {special_event.name}" if special_event else ""
+        
+        # Format the final message
+        message = (
+            f"# {ball.country}\n"
+            f"**Stats:** `{plusatk}{attack_bonus}% ATK/{plushp}{health_bonus}% HP`\n"
+            f"**Base Stats:** ATK: {ball.attack} | HP: {ball.health}\n"
+            f"{system_info}\n"
+            f"{special_info}"
+        )
+        
+        try:
+            emoji = interaction.client.get_emoji(ball.emoji_id)
+            if emoji:
+                message = f"{emoji} {message}"
+        except:
+            pass
+            
+        await interaction.followup.send(message)
 
     @app_commands.command()
     @app_commands.checks.has_any_role(*settings.root_role_ids)
@@ -209,6 +363,7 @@ class Balls(app_commands.Group):
         interaction: discord.Interaction[BallsDexBot],
         countryball: BallTransform,
         user: discord.User,
+        quantity: app_commands.Range[int, 1, 100] = 1,  # Added quantity parameter
         special: SpecialTransform | None = None,
         health_bonus: int | None = None,
         attack_bonus: int | None = None,
@@ -220,6 +375,8 @@ class Balls(app_commands.Group):
         ----------
         countryball: Ball
         user: discord.User
+        quantity: int
+            The number of countryballs to give. Default is 1.
         special: Special | None
         health_bonus: int | None
             Omit this to make it random.
@@ -232,32 +389,60 @@ class Balls(app_commands.Group):
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         player, created = await Player.get_or_create(discord_id=user.id)
-        instance = await BallInstance.create(
-            ball=countryball,
-            player=player,
-            attack_bonus=(
-                attack_bonus
-                if attack_bonus is not None
-                else random.randint(-settings.max_attack_bonus, settings.max_attack_bonus)
-            ),
-            health_bonus=(
-                health_bonus
-                if health_bonus is not None
-                else random.randint(-settings.max_health_bonus, settings.max_health_bonus)
-            ),
-            special=special,
-        )
-        await interaction.followup.send(
-            f"`{countryball.country}` {settings.collectible_name} was successfully given to "
-            f"`{user}`.\nSpecial: `{special.name if special else None}` • ATK: "
-            f"`{instance.attack_bonus:+d}` • HP:`{instance.health_bonus:+d}` "
-        )
-        await log_action(
-            f"{interaction.user} gave {settings.collectible_name} "
-            f"{countryball.country} to {user}. (Special={special.name if special else None} "
-            f"ATK={instance.attack_bonus:+d} HP={instance.health_bonus:+d}).",
-            interaction.client,
-        )
+        
+        # Track the given balls for reporting
+        given_balls = []
+        
+        # Give the specified quantity of countryballs
+        for _ in range(quantity):
+            instance = await BallInstance.create(
+                ball=countryball,
+                player=player,
+                attack_bonus=(
+                    attack_bonus
+                    if attack_bonus is not None
+                    else random.randint(-settings.max_attack_bonus, settings.max_attack_bonus)
+                ),
+                health_bonus=(
+                    health_bonus
+                    if health_bonus is not None
+                    else random.randint(-settings.max_health_bonus, settings.max_health_bonus)
+                ),
+                special=special,
+            )
+            given_balls.append(instance)
+        
+        # Prepare the response message
+        if quantity == 1:
+            ball = given_balls[0]
+            response = (
+                f"`{countryball.country}` {settings.collectible_name} was successfully given to "
+                f"`{user}`.\nSpecial: `{special.name if special else None}` • ATK: "
+                f"`{ball.attack_bonus:+d}` • HP:`{ball.health_bonus:+d}` "
+            )
+        else:
+            response = (
+                f"{quantity} `{countryball.country}` {settings.plural_collectible_name} were successfully "
+                f"given to `{user}`."
+            )
+            
+        await interaction.followup.send(response)
+        
+        # Log the action
+        if quantity == 1:
+            ball = given_balls[0]
+            await log_action(
+                f"{interaction.user} gave {settings.collectible_name} "
+                f"{countryball.country} to {user}. (Special={special.name if special else None} "
+                f"ATK={ball.attack_bonus:+d} HP={ball.health_bonus:+d}).",
+                interaction.client,
+            )
+        else:
+            await log_action(
+                f"{interaction.user} gave {quantity} {settings.collectible_name} "
+                f"{countryball.country} to {user}.",
+                interaction.client,
+            )
 
     @app_commands.command(name="info")
     @app_commands.checks.has_any_role(*settings.root_role_ids, *settings.admin_role_ids)
@@ -347,7 +532,57 @@ class Balls(app_commands.Group):
             f"{settings.collectible_name.title()} {countryball_id} deleted.", ephemeral=True
         )
         await log_action(f"{interaction.user} deleted {ball}({ball.pk}).", interaction.client)
+    @app_commands.command(name="bulk_transfer")
+    @app_commands.checks.has_any_role(*settings.root_role_ids)
+    async def balls_bulk_transfer(
+        self,
+        interaction: discord.Interaction[BallsDexBot],
+        donor: discord.User,
+        receiver: discord.User,
+    ):
+        """
+        Transfer all countryballs from one user to another.
 
+        Parameters
+        ----------
+        donor: discord.User
+            The user from whom the countryballs will be transferred.
+        receiver: discord.User
+            The user who will receive the countryballs.
+        """
+        # Get the player objects for both the donor and the receiver
+        donor_player, _ = await Player.get_or_create(discord_id=donor.id)
+        receiver_player, _ = await Player.get_or_create(discord_id=receiver.id)
+
+        # Get all countryballs owned by the donor
+        balls_to_transfer = await BallInstance.filter(player=donor_player).prefetch_related("player")
+
+        if not balls_to_transfer:
+            await interaction.response.send_message(
+                f"{donor} does not own any countryballs to transfer.", ephemeral=True
+            )
+            return
+    
+        # Start the bulk transfer
+        for ball in balls_to_transfer:
+            ball.player = receiver_player  
+            await ball.save()
+
+            # Log the transfer in the trade table
+            trade = await Trade.create(player1=donor_player, player2=receiver_player)
+            await TradeObject.create(trade=trade, ballinstance=ball, player=donor_player)
+
+        await interaction.response.send_message(
+            f"Transferred all countryballs from {donor} to {receiver}.",
+            ephemeral=True,
+        )
+
+        # Log the action
+        await log_action(
+            f"{interaction.user} bulk-transferred all countryballs from {donor} to {receiver}.",
+            interaction.client,
+        )
+        
     @app_commands.command(name="transfer")
     @app_commands.checks.has_any_role(*settings.root_role_ids)
     async def balls_transfer(
@@ -473,6 +708,7 @@ class Balls(app_commands.Group):
         user: discord.User | None = None,
         countryball: BallTransform | None = None,
         special: SpecialTransform | None = None,
+        regime: RegimeTransform | None = None,  # Add regime parameter
     ):
         """
         Count the number of countryballs that a player has or how many exist in total.
@@ -483,6 +719,8 @@ class Balls(app_commands.Group):
             The user you want to count the countryballs of.
         countryball: Ball
         special: Special
+        regime: Regime
+            Filter countryballs by regime.
         """
         if interaction.response.is_done():
             return
@@ -493,20 +731,27 @@ class Balls(app_commands.Group):
             filters["special"] = special
         if user:
             filters["player__discord_id"] = user.id
+        
+        # Add regime filter logic
+        if regime:
+            filters["ball__regime"] = regime
+            
         await interaction.response.defer(ephemeral=True, thinking=True)
         balls = await BallInstance.filter(**filters).count()
         verb = "is" if balls == 1 else "are"
         country = f"{countryball.country} " if countryball else ""
         plural = "s" if balls > 1 or balls == 0 else ""
         special_str = f"{special.name} " if special else ""
+        regime_str = f"{regime.name} " if regime else ""
+        
         if user:
             await interaction.followup.send(
-                f"{user} has {balls} {special_str}"
+                f"{user} has {balls} {special_str}{regime_str}"
                 f"{country}{settings.collectible_name}{plural}."
             )
         else:
             await interaction.followup.send(
-                f"There {verb} {balls} {special_str}"
+                f"There {verb} {balls} {special_str}{regime_str}"
                 f"{country}{settings.collectible_name}{plural}."
             )
 

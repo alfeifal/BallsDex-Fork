@@ -507,8 +507,4 @@ class Duos(commands.GroupCog):
             await interaction.followup.send(
                 "An error occurred while listing the duos. Please try again later.",
                 ephemeral=True
-<<<<<<< HEAD
             )
-=======
-            )
->>>>>>> upstream/master

@@ -667,8 +667,4 @@ class RedeemCodes(commands.Cog):
             await interaction.followup.send("Unknown action. Valid actions are: create, list, disable, delete, info", ephemeral=True)
 
 async def setup(bot: commands.Bot):
-<<<<<<< HEAD
     await bot.add_cog(RedeemCodes(bot))
-=======
-    await bot.add_cog(RedeemCodes(bot))
->>>>>>> upstream/master

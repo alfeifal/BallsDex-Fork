@@ -7,8 +7,4 @@ if TYPE_CHECKING:
 
 
 async def setup(bot: "BallsDexBot"):
-<<<<<<< HEAD
     await bot.add_cog(Collector(bot))
-=======
-    await bot.add_cog(Collector(bot))
->>>>>>> upstream/master

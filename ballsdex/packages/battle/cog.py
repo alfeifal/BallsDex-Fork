@@ -602,8 +602,4 @@ class Battle(commands.GroupCog):
         await interaction.response.send_message(
             f'Removed {count} {countryball.country}{"s" if count != 1 else ""}!',
             ephemeral=True,
-<<<<<<< HEAD
         )
-=======
-        )
->>>>>>> upstream/master

@@ -52,11 +52,7 @@ DAMAGERNG = [6000,7000] # Damage a boss can deal IF attack_amount has NOT been i
 
 
 LOGCHANNEL = 1331582589663838270
-<<<<<<< HEAD
 OUTPUTCHANNEL = 1318949931054006312
-=======
-OUTPUTCHANNEL = 1308125244740866149
->>>>>>> upstream/master
 #Change this if you want to a different channel for boss logs
 #e.g.
 #LOGCHANNEL = 1234567890987654321
@@ -88,11 +84,7 @@ from discord.ui import View, Button
 from discord import Interaction
 
 class JoinButton(View):
-<<<<<<< HEAD
     def __init__(self, boss_cog, message=None, timeout=10): # set in here how long you want the button last for in seconds
-=======
-    def __init__(self, boss_cog, message=None, timeout=300): # set in here how long you want the button last for in seconds
->>>>>>> upstream/master
         super().__init__(timeout=timeout)
         self.boss_cog = boss_cog
         self.message = message
@@ -116,22 +108,14 @@ class JoinButton(View):
         self.boss_cog.users.append(interaction.user.id)
         
         # Recalculate HP based on new player count
-<<<<<<< HEAD
         new_hp = Boss.calculate_boss_hp(self.boss_cog.bossball.rarity, len(self.boss_cog.users)) #type: ignore
-=======
-        new_hp = Boss.calculate_boss_hp(self.boss_cog.bossball.rarity, len(self.boss_cog.users))
->>>>>>> upstream/master
         self.boss_cog.bossHP = new_hp
         
         await interaction.response.send_message("You have joined the Boss Battle!", ephemeral=True) 
     
         
     async def on_timeout(self):
-<<<<<<< HEAD
         output_channel = await get_output_channel(self.boss_cog.bot) or self.message.channel #type: ignore
-=======
-        output_channel = await get_output_channel(self.boss_cog.bot) or self.message.channel
->>>>>>> upstream/master
         # Remove button once the time ends
         for item in self.children:
             if isinstance(item, Button) and item.custom_id == "join_boss":
@@ -171,7 +155,6 @@ class Boss(commands.GroupCog):
         self.lasthitter = 0
         self.round_task = None
         
-<<<<<<< HEAD
     def calculate_boss_hp(rarity: int, players: int) -> int: #type: ignore
         """Calculate the bosses HP according to rarity and number of people that joined"""
         base_hp = 10000 # set the HP according to your card's average stats
@@ -180,16 +163,6 @@ class Boss(commands.GroupCog):
             base_hp = 10000
 
         extra_hp = (players // 1) * 10000
-=======
-    def calculate_boss_hp(rarity: int, players: int) -> int:
-        """Calculate the bosses HP according to rarity and number of people that joined"""
-        base_hp = 50000 # set the HP according to your card's average stats
-
-        if rarity == 1:  # T1
-            base_hp = 70000
-
-        extra_hp = (players // 1) * 40000
->>>>>>> upstream/master
 
         return base_hp + extra_hp
     
@@ -212,13 +185,8 @@ class Boss(commands.GroupCog):
                 source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
                 return "".join(random.choices(source, k=15))
 
-<<<<<<< HEAD
             extension = self.bossball.wild_card.split(".")[-1] #type: ignore
             file_location = "./admin_panel/media/" + self.bossball.wild_card #type: ignore
-=======
-            extension = self.bossball.wild_card.split(".")[-1]
-            file_location = "./admin_panel/media/" + self.bossball.wild_card
->>>>>>> upstream/master
             file_name = f"nt_{generate_random_name()}.{extension}"
 
             if self.bosswildd[1] == 2:
@@ -227,11 +195,7 @@ class Boss(commands.GroupCog):
                 file = discord.File(file_location, filename=file_name)
 
             await output_channel.send(
-<<<<<<< HEAD
                 f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}", #type: ignore
-=======
-                f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}",
->>>>>>> upstream/master
                 file=file
             )
 
@@ -294,11 +258,7 @@ class Boss(commands.GroupCog):
             # Send round end message
             if int(self.bossHP) <= 0:
                 await channel.send(
-<<<<<<< HEAD
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!" #type: ignore
-=======
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!"
->>>>>>> upstream/master
                 )
                 # Boss has been defeated, conclude the battle
                 await self.auto_conclude(channel)
@@ -450,11 +410,7 @@ class Boss(commands.GroupCog):
         if not self.attack:
             if int(self.bossHP) <= 0:
                 await output_channel.send(
-<<<<<<< HEAD
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!" #type: ignore
-=======
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has been defeated!"
->>>>>>> upstream/master
                 )
                 # Boss has been defeated, conclude the battle
                 await self.auto_conclude(output_channel)
@@ -466,22 +422,14 @@ class Boss(commands.GroupCog):
         else:
             if len(self.users) == 0:
                 await output_channel.send(
-<<<<<<< HEAD
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\nThe boss has won!" #type: ignore
-=======
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\nThe boss has won!"
->>>>>>> upstream/master
                 )
                 # All players died, conclude the battle
                 await self.auto_conclude(channel)
                 return
             else:
                 await output_channel.send(
-<<<<<<< HEAD
                     f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\n" #type: ignore
-=======
-                    f"# Round {self.round} has ended {self.bot.get_emoji(self.bossball.emoji_id)}\nThe boss has dealt {self.bossattack} damage!\n"
->>>>>>> upstream/master
                 )
                 
         # Send round stats file
@@ -514,13 +462,8 @@ class Boss(commands.GroupCog):
             source = string.ascii_uppercase + string.ascii_lowercase + string.ascii_letters
             return "".join(random.choices(source, k=15))
             
-<<<<<<< HEAD
         extension = self.bossball.wild_card.split(".")[-1] #type: ignore
         file_location = "./admin_panel/media/" + self.bossball.wild_card #type: ignore
-=======
-        extension = self.bossball.wild_card.split(".")[-1]
-        file_location = "./admin_panel/media/" + self.bossball.wild_card
->>>>>>> upstream/master
         file_name = f"nt_{generate_random_name()}.{extension}"
         
         if self.attack:
@@ -532,11 +475,7 @@ class Boss(commands.GroupCog):
             self.bossattack = random.randrange(DAMAGERNG[0], DAMAGERNG[1], 100)
             
             await output_channel.send(
-<<<<<<< HEAD
                 (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"), #type: ignore
-=======
-                (f"Round {self.round}\n# {self.bossball.country} is preparing to attack! {self.bot.get_emoji(self.bossball.emoji_id)}"),
->>>>>>> upstream/master
                 file=file
             )
         else:
@@ -546,11 +485,7 @@ class Boss(commands.GroupCog):
                 file = discord.File(file_location, filename=file_name)
                 
             await output_channel.send(
-<<<<<<< HEAD
                 (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"), #type: ignore
-=======
-                (f"Round {self.round}\n# {self.bossball.country} is preparing to defend! {self.bot.get_emoji(self.bossball.emoji_id)}"),
->>>>>>> upstream/master
                 file=file
             )
         
@@ -612,11 +547,7 @@ class Boss(commands.GroupCog):
                 rewards_text.append(f"{last_hitter_user.mention} received the special boss ball!")
                 
                 await log_action(
-<<<<<<< HEAD
                     f"`BOSS REWARDS` gave special {settings.collectible_name} {self.bossball.country} to {last_hitter_user} for last hit. " #type: ignore
-=======
-                    f"`BOSS REWARDS` gave special {settings.collectible_name} {self.bossball.country} to {last_hitter_user} for last hit. "
->>>>>>> upstream/master
                     f"Special=Boss "
                     f"ATK=0 HP=0",
                     self.bot,
@@ -640,11 +571,7 @@ class Boss(commands.GroupCog):
             )
             
             await log_action(
-<<<<<<< HEAD
                 f"`BOSS REWARDS` gave {settings.collectible_name} {self.bossball.country} to {user} for top {i+1} damage. " #type: ignore
-=======
-                f"`BOSS REWARDS` gave {settings.collectible_name} {self.bossball.country} to {user} for top {i+1} damage. "
->>>>>>> upstream/master
                 f"Special=None "
                 f"ATK=0 HP=0",
                 self.bot,
@@ -707,11 +634,7 @@ class Boss(commands.GroupCog):
         
         # Calculate HP based on boss rarity and initial number of players (we'll use 1 as starting point)
         # HP will scale as more players join during the join phase
-<<<<<<< HEAD
         initial_hp = Boss.calculate_boss_hp(ball.rarity, 1) #type: ignore
-=======
-        initial_hp = Boss.calculate_boss_hp(ball.rarity, 1)
->>>>>>> upstream/master
         self.bossHP = initial_hp
         
         def generate_random_name():
@@ -735,11 +658,7 @@ class Boss(commands.GroupCog):
         
         output_channel = await get_output_channel(self.bot) or interaction.channel
         
-<<<<<<< HEAD
         message = await output_channel.send( #type: ignore
-=======
-        message = await output_channel.send(
->>>>>>> upstream/master
             f"<@&1308512664124788837> A boss battle has begun <a:Crown:1331246693546594372>", # change your starting message here
             file=file,
             view=view
@@ -810,17 +729,10 @@ class Boss(commands.GroupCog):
                 )
                 return
         else:
-<<<<<<< HEAD
             user_id = user.id #type: ignore
         if int(user_id) in self.disqualified: #type: ignore
             if undisqualify == True:
                 self.disqualified.remove(int(user_id)) #type: ignore
-=======
-            user_id = user.id
-        if int(user_id) in self.disqualified:
-            if undisqualify == True:
-                self.disqualified.remove(int(user_id))
->>>>>>> upstream/master
                 await interaction.followup.send(
                     f"{user} has been removed from disqualification.\nUse `/boss admin hackjoin` to join the user back.", ephemeral=True
                 )
@@ -833,33 +745,19 @@ class Boss(commands.GroupCog):
                 f"{user} has **not** been disqualified yet.", ephemeral=True
             )
         elif self.boss_enabled != True:
-<<<<<<< HEAD
             self.disqualified.append(int(user_id)) #type: ignore
             await interaction.followup.send(
                 f"{user} will be disqualified from the next fight.", ephemeral=True
             )
         elif int(user_id) not in self.users: #type: ignore
             self.disqualified.append(int(user_id)) #type: ignore
-=======
-            self.disqualified.append(int(user_id))
-            await interaction.followup.send(
-                f"{user} will be disqualified from the next fight.", ephemeral=True
-            )
-        elif int(user_id) not in self.users:
-            self.disqualified.append(int(user_id))
->>>>>>> upstream/master
             await interaction.followup.send(
                 f"{user} has been disqualified successfully.", ephemeral=True
             )
             return
         else:
-<<<<<<< HEAD
             self.users.remove(int(user_id)) #type: ignore
             self.disqualified.append(int(user_id)) #type: ignore
-=======
-            self.users.remove(int(user_id))
-            self.disqualified.append(int(user_id))
->>>>>>> upstream/master
             await interaction.followup.send(
                 f"{user} has been disqualified successfully.", ephemeral=True
             )
@@ -916,11 +814,7 @@ class Boss(commands.GroupCog):
             await interaction.followup.send("All users have selected",ephemeral=True)
         elif len(pingsmsg) < 2000:
             await interaction.followup.send("Ping Successful",ephemeral=True)
-<<<<<<< HEAD
             await interaction.channel.send(pingsmsg) #type: ignore
-=======
-            await interaction.channel.send(pingsmsg)
->>>>>>> upstream/master
         else:
             await interaction.followup.send("Message too long, exceeds 2000 character limit",ephemeral=True)
             
@@ -980,19 +874,11 @@ class Boss(commands.GroupCog):
             await interaction.followup.send(
                 f"Boss successfully concluded", ephemeral=True
             )
-<<<<<<< HEAD
             await interaction.channel.send(f"# Boss has concluded \n💀 ᴛʜᴇ ʙᴏꜱꜱ ᴘʀᴏᴠᴇᴅ ᴜɴꜱᴛᴏᴘᴘᴀʙʟᴇ, ᴄʀᴜꜱʜɪɴɢ ᴀʟʟ ᴡʜᴏ ᴅᴀʀᴇᴅ ᴛᴏ ꜰᴀᴄᴇ ɪᴛ ᴀɴᴅ ꜱᴇᴄᴜʀɪɴɢ ɪᴛꜱ ꜰɪᴇʀᴄᴇ ᴅᴏᴍɪɴɪᴏɴ. 💀") #type: ignore
             with open("totalstats.txt", "w") as file:
                 file.write(f"{total}{total2}")
             with open("totalstats.txt", "rb") as file:
                 await interaction.channel.send(file=discord.File(file, "totalstats.txt")) #type: ignore
-=======
-            await interaction.channel.send(f"# Boss has concluded \n💀 ᴛʜᴇ ʙᴏꜱꜱ ᴘʀᴏᴠᴇᴅ ᴜɴꜱᴛᴏᴘᴘᴀʙʟᴇ, ᴄʀᴜꜱʜɪɴɢ ᴀʟʟ ᴡʜᴏ ᴅᴀʀᴇᴅ ᴛᴏ ꜰᴀᴄᴇ ɪᴛ ᴀɴᴅ ꜱᴇᴄᴜʀɪɴɢ ɪᴛꜱ ꜰɪᴇʀᴄᴇ ᴅᴏᴍɪɴɪᴏɴ. 💀")
-            with open("totalstats.txt", "w") as file:
-                file.write(f"{total}{total2}")
-            with open("totalstats.txt", "rb") as file:
-                await interaction.channel.send(file=discord.File(file, "totalstats.txt"))
->>>>>>> upstream/master
             self.round = 0
             self.balls = []
             self.users = []
@@ -1029,11 +915,7 @@ class Boss(commands.GroupCog):
             bosswinner_user = await self.bot.fetch_user(int(bosswinner))
 
             await log_action(
-<<<<<<< HEAD
                 f"`BOSS REWARDS` gave {settings.collectible_name} {self.bossball.country} to {bosswinner_user}. " #type: ignore
-=======
-                f"`BOSS REWARDS` gave {settings.collectible_name} {self.bossball.country} to {bosswinner_user}. "
->>>>>>> upstream/master
                 f"Special=Boss"
                 f"ATK=0 HP=0",
                 self.bot,
@@ -1103,11 +985,7 @@ class Boss(commands.GroupCog):
                     try:
                         channel = interaction.guild.get_channel(channel_id.id)
                         if channel and channel.permissions_for(interaction.guild.me).read_message_history:
-<<<<<<< HEAD
                             async for message in channel.history(limit=200): #type: ignore
-=======
-                            async for message in channel.history(limit=200):
->>>>>>> upstream/master
                                 if message.author.id not in processed_ids and not message.author.bot and message.author.id not in self.users:
                                     processed_ids.add(message.author.id)
                                     if message.author.id in self.disqualified:
@@ -1141,11 +1019,7 @@ class Boss(commands.GroupCog):
                     )
                 
                 # Recalculate boss HP based on new player count
-<<<<<<< HEAD
                 new_hp = Boss.calculate_boss_hp(self.bossball.rarity, len(self.users)) #type: ignore
-=======
-                new_hp = Boss.calculate_boss_hp(self.bossball.rarity, len(self.users))
->>>>>>> upstream/master
                 self.bossHP = new_hp
                     
                 await interaction.followup.send(

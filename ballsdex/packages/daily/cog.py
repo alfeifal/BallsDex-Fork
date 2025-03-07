@@ -204,4 +204,8 @@ class daily(commands.Cog):
         
         # Log the pack opening
         log_message = log_message.rstrip(", ")
+<<<<<<< HEAD
         await log_action(log_message, self.bot)
+=======
+        await log_action(log_message, self.bot)
+>>>>>>> upstream/master

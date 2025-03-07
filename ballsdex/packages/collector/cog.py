@@ -42,6 +42,15 @@ CommonReq = 500
 # (Which was originally inputted into admin panel or /admin balls create)
 CommonRarity = 150
 
+<<<<<<< HEAD
+=======
+# ROUNDING OPTION FOR AMOUNTS NEEDED, WHAT YOU WOULD LIKE EVERYTHING TO ROUNDED TO
+# e.g. Putting 10 makes everything round to the nearest 10, cc reqs would look something like:(100,110,120,130,140,150 etc)
+# e.g. Putting 5 looks like: (100,105,110,115,120 etc)
+# e.g. Putting 20 looks like: (100,120,140,160,180,200 etc)
+# 1 is no rounding and looks like: (100,106,112,119,127 etc)
+# however you are not limited to these numbers, I think Ballsdex does 50
+>>>>>>> upstream/master
 RoundingOption = 10
 # WARNINGS:
 # if T1Req/CommonReq is not divisible by RoundingOption they will be affected.
@@ -148,7 +157,11 @@ class Collector(commands.GroupCog):
                 text0 = "collector"
                 shinytext = ""
             await interaction.followup.send(
+<<<<<<< HEAD
                 f"You need {collector_number}{shinytext} {country} to create a {text0} card. You currently have {balls}"
+=======
+                f"You need `{collector_number}{shinytext} {country}` to create a {text0} card. You currently have `{balls}`"
+>>>>>>> upstream/master
             )
 
     @app_commands.command()
@@ -411,4 +424,8 @@ class Collector(commands.GroupCog):
             source.embed.colour = discord.Colour.from_rgb(190,100,190)
 
             pages = Pages(source=source, interaction=interaction, compact=True)
+<<<<<<< HEAD
             await pages.start(ephemeral=True)
+=======
+            await pages.start(ephemeral=True)
+>>>>>>> upstream/master

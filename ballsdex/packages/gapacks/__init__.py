@@ -1,14 +1,10 @@
 from typing import TYPE_CHECKING
 
-from .cog import Duos
+from ballsdex.packages.gapacks.cog import gaPacks #Import Class
 
 if TYPE_CHECKING:
     from ballsdex.core.bot import BallsDexBot
 
 
 async def setup(bot: "BallsDexBot"):
-<<<<<<< HEAD
-    await bot.add_cog(Duos(bot))
-=======
-    await bot.add_cog(Duos(bot))
->>>>>>> upstream/master
+    await bot.add_cog(gaPacks(bot))

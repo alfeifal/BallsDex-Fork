@@ -129,4 +129,8 @@ if __name__ == "__main__":
     )
     for attack_text in gen_battle(battle):
         print(attack_text)
+<<<<<<< HEAD
     print(f"Winner:\n{battle.winner} - Turn: {battle.turns}")
+=======
+    print(f"Winner:\n{battle.winner} - Turn: {battle.turns}")
+>>>>>>> upstream/master

@@ -240,7 +240,7 @@ class Collector(commands.GroupCog, name="claim"):
         await pages.start(ephemeral=True)
 
     
-    @tasks.loop(hours=1) 
+    @tasks.loop(hours=24) 
     async def check_unmet_cards(self):
         """
         Automatically check for unmet Collector, Diamond, and Emerald cards, delete them, notify users, and log to channel.

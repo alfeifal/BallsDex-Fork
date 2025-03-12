@@ -221,3 +221,4 @@ class Core(commands.Cog):
             )
         finally:
             task.cancel()
+

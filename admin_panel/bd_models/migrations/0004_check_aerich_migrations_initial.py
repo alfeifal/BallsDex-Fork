@@ -152,14 +152,14 @@ class Migration(migrations.Migration):
                     "spawn_channel",
                     models.BigIntegerField(
                         blank=True,
-                        help_text="Discord channel ID where balls will spawn",
+                        help_text="Discord channel ID where players will spawn",
                         null=True,
                     ),
                 ),
                 (
                     "enabled",
                     models.BooleanField(
-                        help_text="Whether the bot will spawn countryballs in this guild"
+                        help_text="Whether the bot will spawn players in this guild"
                     ),
                 ),
                 ("silent", models.BooleanField()),
@@ -303,7 +303,7 @@ class Migration(migrations.Migration):
                 (
                     "tradeable",
                     models.BooleanField(
-                        default=True, help_text="Whether balls of this event can be traded"
+                        default=True, help_text="Whether players of this event can be traded"
                     ),
                 ),
                 (
@@ -336,14 +336,14 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("country", models.CharField(max_length=48, unique=True)),
-                ("health", models.IntegerField(help_text="Ball health stat")),
-                ("attack", models.IntegerField(help_text="Ball attack stat")),
-                ("rarity", models.FloatField(help_text="Rarity of this ball")),
-                ("emoji_id", models.BigIntegerField(help_text="Emoji ID for this ball")),
+                ("health", models.IntegerField(help_text="Player health stat")),
+                ("attack", models.IntegerField(help_text="Player attack stat")),
+                ("rarity", models.FloatField(help_text="Rarity of this player")),
+                ("emoji_id", models.BigIntegerField(help_text="Emoji ID for this player")),
                 (
                     "wild_card",
                     models.ImageField(
-                        help_text="Image used when a new ball spawns in the wild",
+                        help_text="Image used when a new player spawns in the wild",
                         max_length=200,
                         upload_to="",
                     ),
@@ -351,7 +351,7 @@ class Migration(migrations.Migration):
                 (
                     "collection_card",
                     models.ImageField(
-                        help_text="Image used when displaying balls", max_length=200, upload_to=""
+                        help_text="Image used when displaying players", max_length=200, upload_to=""
                     ),
                 ),
                 (
@@ -361,19 +361,19 @@ class Migration(migrations.Migration):
                 (
                     "capacity_name",
                     models.CharField(
-                        help_text="Name of the countryball's capacity", max_length=64
+                        help_text="Name of the player's ability", max_length=64
                     ),
                 ),
                 (
                     "capacity_description",
                     models.CharField(
-                        help_text="Description of the countryball's capacity", max_length=256
+                        help_text="Description of the player's ability", max_length=256
                     ),
                 ),
                 (
                     "capacity_logic",
                     models.JSONField(
-                        blank=True, default=dict, help_text="Effect of this capacity"
+                        blank=True, default=dict, help_text="Effect of this ability"
                     ),
                 ),
                 (
@@ -396,7 +396,7 @@ class Migration(migrations.Migration):
                     "catch_names",
                     models.TextField(
                         blank=True,
-                        help_text="Additional possible names for catching this ball, "
+                        help_text="Additional possible names for catching this player, "
                         "separated by semicolons",
                         null=True,
                     ),
@@ -404,7 +404,7 @@ class Migration(migrations.Migration):
                 (
                     "tradeable",
                     models.BooleanField(
-                        default=True, help_text="Whether this ball can be traded with others"
+                        default=True, help_text="Whether this player can be traded with others"
                     ),
                 ),
                 ("created_at", models.DateTimeField(auto_now_add=True, null=True)),
@@ -413,7 +413,7 @@ class Migration(migrations.Migration):
                     "economy",
                     models.ForeignKey(
                         blank=True,
-                        help_text="Economical regime of this country",
+                        help_text="Field position of this player",
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="bd_models.economy",
@@ -422,7 +422,7 @@ class Migration(migrations.Migration):
                 (
                     "regime",
                     models.ForeignKey(
-                        help_text="Political regime of this country",
+                        help_text="The player's current team",
                         on_delete=django.db.models.deletion.CASCADE,
                         to="bd_models.regime",
                     ),
@@ -510,7 +510,7 @@ class Migration(migrations.Migration):
                     "server_id",
                     models.BigIntegerField(
                         blank=True,
-                        help_text="Discord server ID where this ball was caught",
+                        help_text="Discord server ID where this player was caught",
                         null=True,
                     ),
                 ),

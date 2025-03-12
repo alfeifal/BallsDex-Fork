@@ -124,10 +124,10 @@ class Collector(commands.GroupCog, name="claim"):
 
         for special in non_hidden_specials:
             total_instances = await BallInstance.filter(special=special).count()
-            required_count = max(1, total_instances // 4)
+            required_count = max(1, total_instances // 3)
             user_count = await BallInstance.filter(special=special, player__discord_id=interaction.user.id).count()
 
-            if total_instances < 4:
+            if total_instances < 3:
                 required_shinies += 1
             elif user_count < required_count:
                 missing_requirements.append(f"{required_count} {special.name} cards (you have {user_count})")
@@ -285,12 +285,12 @@ class Collector(commands.GroupCog, name="claim"):
             
             required_shinies = 0
             for s in non_hidden_specials:
-                if await BallInstance.filter(special=s).count() < 4:
+                if await BallInstance.filter(special=s).count() < 3:
                     required_shinies += 1
             
             user_shinies = await BallInstance.filter(special=shiny_special, player__discord_id=instance.player.discord_id, ball=instance.ball).count()
             special_counts = {s.name: await BallInstance.filter(special=s, player__discord_id=instance.player.discord_id).count() for s in non_hidden_specials}
-            required_counts = {s.name: max(1, await BallInstance.filter(special=s).count() // 4) for s in non_hidden_specials if await BallInstance.filter(special=s).count() >= 4}
+            required_counts = {s.name: max(1, await BallInstance.filter(special=s).count() // 3) for s in non_hidden_specials if await BallInstance.filter(special=s).count() >= 3}
 
             if not has_collector or not has_diamond or user_shinies < required_shinies or any(special_counts.get(name, 0) < req for name, req in required_counts.items()):
                 unmet_cards["Emerald"].append(instance)
